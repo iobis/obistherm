@@ -2,7 +2,7 @@
 
 This repository contains the code used to generate the **obistherm** dataset, which includes OBIS occurrence data matched with multiple sources of monthly temperature. Temperature data is extracted for each occurrence based on the date it was collected, at the recorded depth or across multiple depths. See how to download it [here](https://github.com/iobis/obis-therm#accessing-the-dataset) and how to use it [here](https://github.com/iobis/obis-therm#using-the-data).
 
-You can understand the dataset structure [here](https://github.com/iobis/obis-therm/blob/main/structure.md). The current version of **obistherm** is based on the [OBIS full export](https://obis.org/data/access/) of 2024-07-23 and covers the period of 1986 to 2024.
+You can understand the dataset structure [here](https://github.com/iobis/obis-therm/blob/main/structure.md). The current version of **obistherm** is based on the [OBIS parquet export](https://obis.org/data/access/) of 2025-11-20 and covers the period of 1982 to 2025.
 
 ## Temperature sources
 
@@ -11,11 +11,11 @@ At this moment, the dataset include temperature information from four sources:
 - [Global Ocean Physics Reanalysis (CMEMS - GLORYS)](https://data.marine.copernicus.eu/product/GLOBAL_MULTIYEAR_PHY_001_030/description) - The GLORYS product is the CMEMS global ocean eddy-resolving reanalysis (1993 onward). It is based on the current real-time global forecasting CMEMS system. The model component is the NEMO platform. This is a modeled product, with 50 vertical levels and offered at a 1/12° resolution (equirectangular grid). This is a L4 product.
 - [Daily Global 5km Satellite Sea Surface Temperature (NOAA - CoralTemp)](https://coralreefwatch.noaa.gov/product/5km/index_5km_sst.php) - The NOAA Coral Reef Watch (CRW) daily global 5km Sea Surface Temperature (SST) product (CoralTemp), shows the nighttime ocean temperature measured at the surface (1986 onward). The product was developed from two related reanalysis (i.e. reprocessed) SST products and a near real-time SST product.
 - [Multi-Scale Ultra High Resolution Sea Surface Temperature (NASA - MUR-SST)](https://podaac.jpl.nasa.gov/dataset/MUR-JPL-L4-GLOB-v4.1) - MUR provides global SST data every day at a spatial resolution of 0.01 degrees in longitude-latitude coordinates, roughly at 1 km intervals (2002 onward). The MUR dataset is among the highest resolution SST analysis datasets currently available.
-- [Global Ocean OSTIA Sea Surface Temperature and Sea Ice Analysis](https://data.marine.copernicus.eu/product/SST_GLO_SST_L4_NRT_OBSERVATIONS_010_001/description) - The OSTIA global foundation Sea Surface Temperature product provides daily gap-free maps of Foundation Sea Surface Temperature at 0.05° grid resolution, using in-situ and satellite data from both infrared and microwave radiometers (2007 onward). The OSTIA system is run by the UK's Met Office and delivered by IFREMER PU. This is a L4 product.
+- [Global Ocean OSTIA Sea Surface Temperature and Sea Ice Analysis](https://data.marine.copernicus.eu/product/SST_GLO_SST_L4_NRT_OBSERVATIONS_010_001/description) - The OSTIA global foundation Sea Surface Temperature product provides daily gap-free maps of Foundation Sea Surface Temperature at 0.05° grid resolution, using in-situ and satellite data from both infrared and microwave radiometers (2007 onward). The OSTIA system is run by the UK's Met Office and delivered by IFREMER PU. This is a L4 product. Recent data comes from the NRT (Near Real Time) version of the product, while older data comes from the Reprocessed version (see column `ostiaProduct`).
 
 ## Codes
 
-The production of this dataset is simple and depends on a single code: `get_temperatures.R` (and associated functions). An overview of the production steps is available [here](https://github.com/iobis/obis-therm/blob/main/pseudocode.md). Before starting, ensure that all requirements are met (see `requirements.R`).
+The production of this dataset is simple and depends on a single code: `get_temperatures.R` (and associated functions). An overview of the production steps is available [here](https://github.com/iobis/obis-therm/blob/main/pseudocode.md). Before starting, ensure that all requirements are met (run `setup.R`).
 
 Once the data is downloaded, the separate `parquet` files are aggregated, the H3 index is added, and the file is converted to GeoParquet. This is done through the `aggregate_files.R`
 
@@ -77,6 +77,8 @@ for (obj in s3_objects) {
 ## Using the data
 
 The data is stored as a [GeoParquet](https://geoparquet.org/) file. You can read it using [`arrow`](https://arrow.apache.org/), or with geospatial libraries (e.g. Python `GeoPandas`, R `sfarrow`). Although you can access it directly through the S3 bucket, it is always faster when you have a local copy stored.
+
+We also recommend using DuckDB for fast querying of the Parquet files. You can learn more about using DuckDB with OBIS Parquet datasets [here](https://resources.obis.org/tutorials/duckdb-part1/).
 
 Accessing through `arrow` (no spatial):
 
@@ -342,11 +344,3 @@ Map(point_layer)
 ## Notebooks
 
 Check out other examples of use in our [notebooks](https://github.com/iobis/obis-therm/tree/main/notebooks).
-
-## Updates
-
-- The code now uses `Dask` integration with `xarray` for parallel processing.
-
-## Next steps
-
-- Convert all main code to Python, and just do post-processing on R.
