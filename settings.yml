@@ -1,0 +1,21 @@
+# If mode is 'test', the application runs in test mode.
+# This will only download a sample data using `robis` package
+# use mode 'production' to run the full application
+mode: production
+
+# Working folders
+# Folder to store temporary files
+outfolder: temp
+# Folder to store final results
+outfolder_final: results
+
+# Source for OBIS data
+# leave as NULL to download from OBIS open data (https://github.com/iobis/obis-open-data)
+obis_source: '/Volumes/OBIS2/data/obis_data/'
+
+# Copernicus user and password
+# For downloading data from Copernicus you will need a valid account (you can 
+# create one for free [here](https://data.marine.copernicus.eu/register)). 
+# If you stored this as environment variables, you can leave these fields empty.
+copernicus_user: NULL
+copernicus_password: NULL

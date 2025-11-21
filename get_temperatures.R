@@ -15,56 +15,71 @@
 # 32 = MUR SST coordinate is approximated
 # 64 = OSTIA SST coordinate is approximated
 # Flags can be summed.
-# E.g. a flag = 6 means that date is range and surfaceTemperature and medianTemperature are approximated
+# In the new version flags are later decoded and served as strings
 
 # Load packages ----
 library(terra)
 library(reticulate)
 library(arrow)
+library(duckdb)
 library(parallel)
 library(dplyr)
 library(tidyr)
 library(storr)
-cm <- import("copernicusmarine")
-xr <- import("xarray")
-pd <- import("pandas")
+# Source functions and settings
 source("functions/nearby_from_nc.R")
 source("functions/dates.R")
 source("functions/download_data.R")
 source("functions/utils.R")
 source("functions/get_depths.R")
 source("functions/data_load.R")
+settings <- yaml::read_yaml("settings.yml", readLines.warn = FALSE)
+# Load python libraries
+check_venv()
+cm <- import("copernicusmarine")
+xr <- import("xarray")
+pd <- import("pandas")
 
 # Settings ----
-if (Sys.getenv("COPERNICUS_USER") != "") {
-  .user <- Sys.getenv("COPERNICUS_USER")
-  .pwd <- Sys.getenv("COPERNICUS_PWD")
-} else {
-  .user <- readline("Enter your user\n")
-  .pwd <- readline("Enter your password\n")
-}
+check_user(settings$copernicus_user, settings$copernicus_password)
 options(timeout = 999999999)
+is_test <- ifelse(settings$mode == "test", TRUE, FALSE)
 
 # Start Dask for parallel processing
-start_dask(browse = TRUE)
+start_dask(browse = ifelse(interactive(), TRUE, FALSE))
 
 st <- storr_rds("control_storr")
-outfolder <- "temp"
-outfolder_final <- "results"
+outfolder <- settings$outfolder
+outfolder_final <- settings$outfolder_final
 fs::dir_create(outfolder)
 fs::dir_create(outfolder_final)
 filename <- "var=thetao"
 coordnames <- c("decimalLongitude", "decimalLatitude")
 
 # Define range of dates to get information
-range_year <- 1986:lubridate::year(Sys.Date())
+range_year <- 1982:lubridate::year(Sys.Date())
 range_month <- 1:12
 
 # Define ranges that are available per product
 glorys_range <- 1993:lubridate::year(Sys.Date())
 coraltemp_range <- 1986:lubridate::year(Sys.Date())
 mur_range <- 2002:lubridate::year(Sys.Date())
-ostia_range <- 2007:lubridate::year(Sys.Date())
+#https://help.marine.copernicus.eu/en/articles/4872705-what-are-the-main-differences-between-nearrealtime-and-multiyear-products
+ostia_rep <- cm$open_dataset(
+  dataset_id = "METOFFICE-GLO-SST-L4-REP-OBS-SST",
+  username = .user,
+  password = .pwd
+)
+ostia_rep_range <- c(ostia_rep$time$min()$values, ostia_rep$time$max()$values)
+ostia_rep_range <- lubridate::year(ostia_rep_range[1]):lubridate::year(ostia_rep_range[2])
+ostia_nrt <- cm$open_dataset(
+  dataset_id = "METOFFICE-GLO-SST-L4-NRT-OBS-SST-V2",
+  username = .user,
+  password = .pwd
+)
+ostia_nrt_range <- c(ostia_nrt$time$min()$values, ostia_nrt$time$max()$values)
+ostia_nrt_range <- lubridate::year(ostia_nrt_range[1]):lubridate::year(ostia_nrt_range[2])
+ostia_range <- seq(min(ostia_rep_range), max(ostia_nrt_range))
 
 # Define target dataset for Copernicus, time and depths
 dataset <- "cmems_mod_glo_phy_my_0.083deg_P1M-m"
@@ -87,18 +102,9 @@ depths <- ds_sample$depth$to_dataframe()
 glorys1_max_date <- max(ds_sample$time$to_dataframe()[, 1])
 
 # Open OBIS dataset ------
-obis_ds <- open_dataset(get_obis())
-
-# Limit by selected columns
-obis_filt <- obis_ds %>%
-  select(
-    AphiaID, species, family,
-    id, dataset_id, occurrenceID, datasetID,
-    minimumDepthInMeters, maximumDepthInMeters,
-    decimalLongitude, decimalLatitude,
-    eventDate, date_start, date_mid, date_end, date_year
-  ) %>%
-  filter(!is.na(date_year))
+obis_ds <- get_obis(obis_source = settings$obis_source) |>
+  partition_by_year() |>
+  open_db()
 
 log_df <- data.frame(
   year = rep(range_year, each = 12),
@@ -110,13 +116,19 @@ log_df <- data.frame(
   status_general = NA
 )
 
+if (is_test) {
+  range_year <- 2010
+  range_month <- 1
+}
+
 # Get data ------
 for (yr in seq_along(range_year)) {
   sel_year <- range_year[yr]
   cat("Downloading data for year", sel_year, "\n")
 
   # Load data for a specific year and month
-  obis_sel <- load_data_year(sel_year, obis_filt)
+  obis_sel <- load_data_year(sel_year, obis_ds)
+  cat(nrow(obis_sel), "total points for this year.\n")
 
   for (mo in seq_along(range_month)) {
     sel_month <- range_month[mo]
@@ -124,6 +136,7 @@ for (yr in seq_along(range_year)) {
     cat("Proccessing month", sel_month, "\n")
 
     obis_sel_month <- filter_data_month(obis_sel, sel_month)
+    cat(nrow(obis_sel_month), "total points for this month.\n")
 
     if (nrow(obis_sel_month) > 0 && !st$exists(st_cod)) {
       all_vals <- data.frame(
@@ -141,12 +154,13 @@ for (yr in seq_along(range_year)) {
         coraltempSST = NA,
         murSST = NA,
         ostiaSST = NA,
+        ostiaProduct = NA,
         flag = obis_sel_month$flagDate
       )
 
       st$set(st_cod, "started")
 
-      obis_dataset <- obis_sel_month %>%
+      obis_dataset <- obis_sel_month |>
           select(decimalLongitude, decimalLatitude, temp_ID,
             depth_min = minimumDepthInMeters, depth_max = maximumDepthInMeters
           )
@@ -166,12 +180,13 @@ for (yr in seq_along(range_year)) {
           password = .pwd,
           filter = paste0("*", sel_year, sprintf("%02d", sel_month), "*"),
           output_directory = "temp/",
-          no_directories = T,
-          force_download = T
+          no_directories = T
         )
-        outf_temp_glorys <- as.character(outf_temp_glorys[[1]])
+        outf_temp_glorys <- lapply(outf_temp_glorys$files, \(x) x$file_path) |>
+          check_ifdate(sel_year, sel_month, "_", target = 1) |>
+          (\(x) unlist(lapply(x, as.character), use.names = F))()
 
-        obis_dataset <- obis_dataset %>%
+        obis_dataset <- obis_dataset |>
           mutate(
             to_remove_dmin = ifelse(is.na(depth_min), TRUE, FALSE),
             to_remove_dmax = ifelse(is.na(depth_max), TRUE, FALSE),
@@ -202,30 +217,30 @@ for (yr in seq_along(range_year)) {
         valid_depths <- get_depths(ds_temp_glorys, obis_dataset,
          paste(sel_year, sprintf("%02d", sel_month), "01", sep = "-"))
 
-        valid_depths <- valid_depths %>%
+        valid_depths <- valid_depths |>
           mutate(to_remove_ddeep = ifelse(is.na(depth_deep), TRUE, FALSE),
-                 to_remove_dmid = ifelse(is.na(depth_mid), TRUE, FALSE)) %>%
+                 to_remove_dmid = ifelse(is.na(depth_mid), TRUE, FALSE)) |>
           mutate(depth_deep = ifelse(is.na(depth_deep), 0, depth_deep),
                  depth_mid = ifelse(is.na(depth_mid), 0, depth_mid))
 
         obis_dataset <- left_join(obis_dataset, valid_depths, by = "temp_ID")
 
-        to_remove <- obis_dataset %>%
+        to_remove <- obis_dataset |>
           select(starts_with("to_remove"))
 
-        obis_dataset <- obis_dataset %>%
+        obis_dataset <- obis_dataset |>
           select(!starts_with("to_remove"))
 
         success <- try(download_temp("glorys", ds_temp_glorys, obis_dataset, sel_month, sel_year))
 
         if (!inherits(success, "try-error")) {
-          glorys_data <- success %>%
-            select(temp_ID, depth_type, value) %>%
+          glorys_data <- success |>
+            select(temp_ID, depth_type, value) |>
             pivot_wider(names_from = depth_type, values_from = value)
 
-          glorys_data_depths <- success %>%
-            select(temp_ID, depth_type, depth) %>%
-            mutate(depth_type = paste0(depth_type, "_depth")) %>%
+          glorys_data_depths <- success |>
+            select(temp_ID, depth_type, depth) |>
+            mutate(depth_type = paste0(depth_type, "_depth")) |>
             pivot_wider(names_from = depth_type, values_from = depth)
 
           rm(success)
@@ -417,7 +432,13 @@ for (yr in seq_along(range_year)) {
       if (sel_year %in% ostia_range) {
         cat("Downloading OSTIA\n")
 
-        ostia_id <- "METOFFICE-GLO-SST-L4-NRT-OBS-SST-V2"
+        if (sel_year %in% ostia_rep_range) {
+          ostia_id <- "METOFFICE-GLO-SST-L4-REP-OBS-SST"
+          ostia_prod <- "REP"
+        } else {
+          ostia_id <- "METOFFICE-GLO-SST-L4-NRT-OBS-SST-V2"
+          ostia_prod <- "NRT"
+        }
         ostia_ds <- file.path(outfolder, "ostiatemp.nc")
 
         df <- try(
@@ -427,13 +448,14 @@ for (yr in seq_along(range_year)) {
               password = .pwd,
               filter = paste0("*", sel_year, sprintf("%02d", sel_month), "*"),
               output_directory = "temp/",
-              no_directories = T,
-              force_download = T
+              no_directories = T
             )
           )
 
         if (!inherits(df, "try-error")) {
           cat("Extracting OSTIA\n")
+          df <- lapply(df$files, \(x) x$file_path)
+          df <- check_ifdate(df, sel_year, sel_month, target = c(28, 31))
           df_ds <- xr$open_mfdataset(unlist(lapply(df, as.character), recursive = T))
           df_ds <- df_ds$analysed_sst
           df_ds <- df_ds$mean(dim = "time", skipna = T)
@@ -464,6 +486,7 @@ for (yr in seq_along(range_year)) {
           all_vals$ostiaSST[na_to_solve] <- nearby_ostia$value
           all_vals$flag[na_to_solve[!is.na(nearby_ostia$value)]] <-
             all_vals$flag[na_to_solve[!is.na(nearby_ostia$value)]] + 64
+          all_vals$ostiaProduct[!is.na(all_vals$ostiaSST)] <- ostia_prod
 
           st$set(st_cod, c(st$get(st_cod), "ostia"))
           log_df[log_df$year == sel_year & log_df$month == sel_month, "status_ostia"] <- "concluded"
@@ -476,12 +499,12 @@ for (yr in seq_along(range_year)) {
         log_df[log_df$year == sel_year & log_df$month == sel_month, "status_ostia"] <- "unavailable"
       }
 
-
-      all_vals <- left_join(obis_sel_month, all_vals, by = "temp_ID") %>%
+      all_vals <- all_vals |> rename(obistherm_flags = flag)
+      all_vals <- left_join(obis_sel_month, all_vals, by = "temp_ID") |>
         select(-temp_ID, -flagDate)
 
       have_data <- apply(
-        all_vals %>%
+        all_vals |>
           select(
             surfaceTemperature, midTemperature, deepTemperature,
             bottomTemperature,

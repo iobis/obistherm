@@ -64,3 +64,6 @@ data/
 __pycache__
 
 _upload.R
+
+.venv/
+.vscode/

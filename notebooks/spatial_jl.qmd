@@ -1,0 +1,58 @@
+---
+title: "Spatial operations - R"
+format: html
+engine: julia
+---
+
+## GeoParquet format
+
+The `obistherm` dataset is saved on GeoParquet format. Thus, it contains a geometry column in WKB format. On Julia, you can query this using the spatial extension from `DuckDB`.
+
+_Note: to see how to download the data, check [this other notebook.](https://github.com/iobis/obis-therm/blob/main/notebooks/data_access_jl.qmd)_
+
+``` {julia}
+#| output: false
+#| warning: false
+# Install all needed packages
+using Pkg
+Pkg.add(["DuckDB", "DataFrames"])
+```
+
+
+``` {julia}
+#| echo: false
+#| output: false
+local_folder = "../aggregated"
+```
+
+
+``` {julia}
+using DuckDB
+using DataFrames
+
+wkt = "POLYGON((-70 -25, -70 29, -30 29, -30 -25, -70 -25))"
+
+con = DBInterface.connect(DuckDB.DB)
+
+DBInterface.execute(con, "install spatial;")
+DBInterface.execute(con, "load spatial;")
+
+ds_filt = DBInterface.execute(con, """
+    SELECT species, coraltempSST, geometry, ST_Point2DFromWKB(geometry)
+    FROM read_parquet('$(local_folder)/**/*.parquet', hive_partitioning=1)
+    WHERE species = 'Leptuca thayeri'
+      -- And then we use the spatial extension here
+      AND ST_Intersects(geometry, ST_GeomFromText('$(wkt)'))
+    GROUP BY species
+""") |> DataFrame
+
+# Close connection when done
+DBInterface.close!(con)
+
+first(ds_filt, 5)
+```
+
+
+## H3 grid system
+
+The `obistherm` dataset also comes with pre-computed H3 index at resolution 7. The H3 grid system is a hierarchical, hexagon-based spatial indexing system developed by Uber that divides the globe into hexagonal cells at multiple resolutions, allowing for efficient spatial analysis and indexing. It enables seamless geospatial operations like clustering, nearest-neighbor queries, and region aggregation with consistent cell areas and shapes across the globe. You can learn more about it [here](https://h3geo.org/).

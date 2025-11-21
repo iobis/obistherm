@@ -30,24 +30,11 @@ is_package_installed <- function(pkg) {
 }
 
 # Check which ones are not installed and install if needed:
-for (i in 1:length(req_packages)) {
+for (i in seq_along(req_packages)) {
   if (!is_package_installed(req_packages[i])) {
     install.packages(req_packages[i])
   }
 }
 
 # Install Python packages
-reticulate::py_install(c("xarray", "zarr", "copernicusmarine"), pip = TRUE)
-
-# Download full export of OBIS
-api_call <- httr::content(httr::GET("https://api.obis.org/export?complete=true"), as = "parsed")
-api_call <- api_call$results[[1]]
-latest_export <- paste0("https://obis-datasets.ams3.digitaloceanspaces.com/", api_call$s3path)
-
-options(timeout = 999999999)
-fs::dir_create("data")
-download.file(
-    url = latest_export,
-    destfile = paste0("data/", gsub("exports/", "", api_call$s3path)),
-    method = "wget"
-)
+reticulate::py_install(envname = "./.venv", c("xarray", "zarr", "copernicusmarine", "dask[distributed]", "bokeh>=3.1.0"), pip = TRUE)

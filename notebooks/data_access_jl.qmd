@@ -1,0 +1,223 @@
+---
+title: "Accessing the OBIS thermal dataset from R"
+format: html
+engine: julia
+---
+
+## Accessing the dataset
+
+### Download a local copy
+
+The final dataset is available through the OBIS AWS S3 bucket `s3://obis-products/obistherm`. If you have the **AWS** CLI program installed in your computer, you can run the following in the command line:
+
+``` bash
+aws s3 cp --recursive s3://obis-products/obistherm . --no-sign-request
+```
+What will download all files to your local folder. Alternatively, on Julia you can use the `AWSS3` package.
+
+
+``` {julia}
+#| output: false
+#| warning: false
+# Install all needed packages
+using Pkg
+Pkg.add(["AWSS3", "Downloads", "FilePathsBase", "FilePaths", "DuckDB", "DataFrames", "DataFramesMeta", "Statistics", "Dates", "StatsPlots", "Plots"])
+```
+
+
+``` {julia}
+#| eval: false
+using AWSS3, Downloads, FilePathsBase, FilePaths
+
+local_folder = p"obistherm"
+mkpath(local_folder)
+bucket = "obis-products"
+prefix = "obistherm"
+
+objs = s3_list_objects(bucket; prefix)
+total = length(objs)
+i = 0
+
+for obj in objs
+    i += 1
+    key = obj.key
+    println("Downloading $i of $total: $key")
+
+    if !endswith(key, "/")
+        local_file = local_folder / key
+        mkpath(parent(local_file))
+        s3_get_file(bucket, key, string(local_file))
+        println("Downloaded $key → $local_file")
+    end
+end
+```
+
+Once you have downloaded the data to a local folder, you can then open it using [`DuckDB`](https://duckdb.org/docs/stable/clients/julia). This does not open the data on memory, what enables you to work with such a big dataset (more than 103 million records) seamlessly. You can learn more about using DuckDB to read OBIS datasets [here](https://resources.obis.org/tutorials/duckdb-part1/).
+
+### Accessing through the S3 storage
+
+Downloading a local copy is the best solution to speed up any operation you need to do. However, it is also possible to access the dataset directly from the S3 storage. For that you need to install the `https` extension.
+
+``` {julia}
+#| eval: false
+using DuckDB
+using DataFrames
+
+s3_storage = "s3://obis-products/obistherm"
+
+con = DBInterface.connect(DuckDB.DB)
+
+DBInterface.execute(con, "install httpfs")
+DBInterface.execute(con, "load httpfs")
+
+ocyp_recs = DBInterface.execute(con, """
+    SELECT species, year, COUNT(*) as n
+    FROM read_parquet('$(s3_storage)/**/*.parquet', hive_partitioning=1)
+    WHERE family = 'Ocypodidae'
+      AND species IS NOT NULL
+    GROUP BY species, year
+    ORDER BY species, year
+    LIMIT 1;
+""") |> DataFrame
+
+# Close connection when done
+DBInterface.close!(con)
+```
+
+The speed of any operation done with the S3 version will depend on your internet connection and the type of operation. **The dataset is organized by year (note that we use a [hive structure in the files](https://arrow.apache.org/docs/r/articles/dataset.html)), and any operation that filter the data for a single year will be faster, because Arrow will only need to read one file.**
+
+## Filtering and aggregating
+
+You can quickly generate summaries and filter the data. Let's start by looking at the number of records for the family Ocypodidae across years.
+
+``` {julia}
+#| echo: false
+#| output: false
+local_folder = "../aggregated"
+```
+
+
+``` {julia}
+using DuckDB
+using DataFrames
+
+con = DBInterface.connect(DuckDB.DB)
+
+ocyp_recs = DBInterface.execute(con, """
+    SELECT species, year, COUNT(*) as n
+    FROM read_parquet('$(local_folder)/**/*.parquet', hive_partitioning=1)
+    WHERE family = 'Ocypodidae'
+      AND species IS NOT NULL
+    GROUP BY species, year
+    ORDER BY species, year
+""") |> DataFrame
+
+# Close connection when done
+DBInterface.close!(con)
+
+first(ocyp_recs, 5)
+```
+
+1. We start by selecting the columns and creating a count based on the number of rows 
+2. We open the data from the Parquet 
+3. We then filter the data. In this case we filter by the family "Ocypodidae"  
+4. We filter to remove those with no "species" name, that would be not at the species rank  
+5. Then we group our data by _species_ and _year_  
+
+**Note the `DBInterface.close!(con)` on the end of the operation.** This is important to close the connection with the in-memory database.
+
+Let's work with the 4 species with the largest number of records. We did the counts by year, so we will aggregate to get the total. 
+
+``` {julia}
+using DataFramesMeta
+using Statistics
+
+top_ocyp = @chain ocyp_recs begin
+    groupby(:species)
+    combine(:n => sum => :total)
+    sort(:total, rev=true)
+    first(4)
+end
+
+println(top_ocyp)
+```
+
+We will now filter the data for those species to check the temperatures across time.
+
+``` {julia}
+top_species = top_ocyp.species
+
+con = DBInterface.connect(DuckDB.DB)
+
+top_ocyp_data = DBInterface.execute(con, """
+    SELECT 
+        species,
+        surfaceTemperature as glorysSST,
+        coraltempSST,
+        murSST,
+        ostiaSST,
+        year,
+        month,
+        decimalLongitude,
+        decimalLatitude
+    FROM read_parquet('$(local_folder)/**/*.parquet', hive_partitioning=1)
+    WHERE species IN ($(join(["'" * s * "'" for s in top_species], ", ")))
+""") |> DataFrame
+
+DBInterface.close!(con)
+
+println(first(top_ocyp_data, 6))
+println(describe(top_ocyp_data))
+```
+
+We select only the columns that we are going to use. We also rename the surfaceTemperature column (which is the GLORYS product) to glorysSST.
+
+CoralTemp is the most complete product in this case, so we will focus on it. We can quickly produce a plot of temperature over time for those 4 species.
+
+``` {julia}
+using Dates
+using StatsPlots
+using Plots
+
+top_ocyp_data.date = Date.(string.(top_ocyp_data.year) .* "-" .* 
+                           string.(top_ocyp_data.month) .* "-01")
+
+species_list = unique(top_ocyp_data.species)
+colors = palette(:default, length(species_list))
+color_map = Dict(zip(species_list, colors))
+
+top_ocyp_data.color = [color_map[s] for s in top_ocyp_data.species]
+
+# Plot 1: Time series with facets
+@df top_ocyp_data scatter(
+    :date, :coraltempSST,
+    group=:species,
+    layout=(2,2),
+    color=:color,
+    legend=:outertopright,
+    title=permutedims(unique(:species)),
+    xlabel="Date",
+    ylabel="Coral Temp SST"
+)
+```
+
+We can also do a boxplot of the full data for each species. We will also get the .95 quantile, what we can use as an indication of thermal limit.
+
+``` {julia}
+limits = @chain top_ocyp_data begin
+    groupby(:species)
+    combine(:coraltempSST => (x -> quantile(skipmissing(x), 0.95)) => :limit)
+end
+
+# Boxplot with horizontal lines
+@df top_ocyp_data boxplot(
+    :species, :coraltempSST,
+    legend=false,
+    xlabel="Species",
+    ylabel="Coral Temp SST"
+)
+```
+
+It appears that _Austruca lactea_ has the widest thermal range. 
+
+Check the README of the repository for more information about the dataset.
