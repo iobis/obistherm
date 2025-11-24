@@ -163,7 +163,7 @@ gdf
 
 ## Examples
 
-> [NOTE]
+> [!NOTE]
 > On all examples, we use a local copy stored in a folder called "aggregated". Change it to your local folder or access through the S3 access point.
 
 ### R
