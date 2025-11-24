@@ -1,42 +1,77 @@
 # Dataset structure
 
+<!-- 
+library(arrow)
+ds <- open_dataset("agg2")
+ds_s <- schema(ds)
+obj <- ds$schema$ToString(truncate = FALSE)
+obj <- strsplit(obj, "\n")
+obj <- obj[[1]][1:length(colnames(ds))]
+obj <- strsplit(obj, ": ")
+df <- data.frame(
+    column = unlist(lapply(obj, \(x) x[1])),
+    class = unlist(lapply(obj, \(x) x[2]))
+)
+if (file.exists("_columns.csv")) {
+    cols_expl <- read.csv("_columns.csv", sep = ";")
+    df <- dplyr::left_join(df, cols_expl[,c("column", "explanation")])
+    write.csv(df, "_columns.csv", row.names = FALSE)
+} else {
+    write.csv(df, "_columns.csv", row.names = FALSE)
+}
+knitr::kable(df)
+-->
+
 The dataset is structured as this:
 
-|column                   |class        |
-|:------------------------|:------------|
-|AphiaID                  |integer      |
-|species                  |character    |
-|family                   |character    |
-|id                       |character    |
-|dataset_id               |character    |
-|occurrenceID             |character    |
-|datasetID                |character    |
-|minimumDepthInMeters     |numeric      |
-|maximumDepthInMeters     |numeric      |
-|decimalLongitude         |numeric      |
-|decimalLatitude          |numeric      |
-|eventDate                |character    |
-|date_mid                 |integer64    |
-|month                    |integer      |
-|surfaceTemperature       |numeric      |
-|midTemperature           |numeric      |
-|deepTemperature          |numeric      |
-|bottomTemperature        |numeric      |
-|midDepth                 |numeric      |
-|deepDepth                |numeric      |
-|minimumDepthTemperature  |numeric      |
-|maximumDepthTemperature  |numeric      |
-|minimumDepthClosestDepth |numeric      |
-|maximumDepthClosestDepth |numeric      |
-|coraltempSST             |numeric      |
-|murSST                   |numeric      |
-|ostiaSST                 |numeric      |
-|flag                     |integer      |
-|geometry                 |arrow_binary |
-|h3_7                     |character    |
-|year                     |integer      |
+|column                        |class        |explanation                                                                              |
+|:-----------------------------|:------------|:----------------------------------------------------------------------------------------|
+|_id                           |string       |Globally unique identifier assigned by OBIS                                              |
+|dataset_id                    |string       |Internal dataset identifier assigned by OBIS                                             |
+|occurrenceID                  |string       |Occurrence ID (DwC)                                                                      |
+|datasetID                     |string       |Dataset ID (DwC)                                                                         |
+|AphiaID                       |int32        |WoRMS AphiaID                                                                            |
+|scientificName                |string       |Scientific name                                                                          |
+|species                       |string       |Species (from WoRMS)                                                                     |
+|genus                         |string       |Genus (from WoRMS)                                                                       |
+|family                        |string       |Family (from WoRMS)                                                                      |
+|order                         |string       |Order (from WoRMS)                                                                       |
+|class                         |string       |Class (from WoRMS)                                                                       |
+|phylum                        |string       |Phylum (from WoRMS)                                                                      |
+|kingdom                       |string       |Kingdom (from WoRMS)                                                                     |
+|eventDate                     |string       |Event date (DwC)                                                                         |
+|date_start                    |double       |Unix timestamp based on eventDate (start)                                                |
+|date_mid                      |double       |Unix timestamp based on eventDate (middle)                                               |
+|date_end                      |double       |Unix timestamp based on eventDate (end)                                                  |
+|decimalLongitude              |double       |Parsed and validated by OBIS                                                             |
+|decimalLatitude               |double       |Parsed and validated by OBIS                                                             |
+|coordinatePrecision           |string       |Precision of the coordinates                                                             |
+|coordinateUncertaintyInMeters |double       |Uncertainty of the coordinates in meters                                                 |
+|minimumDepthInMeters          |double       |Maximum depth in meters                                                                  |
+|maximumDepthInMeters          |double       |Minimum depth in meters                                                                  |
+|absence                       |bool         |If TRUE, is an absence                                                                   |
+|flags                         |list<element |OBIS QC flags                                                                            |
+|month                         |int32        |Month                                                                                    |
+|surfaceTemperature            |double       |GLORYS surface temperature                                                               |
+|midTemperature                |double       |GLORYS temperature at the mid-range of the water column                                  |
+|deepTemperature               |double       |GLORYS temperature at the maximum range of depth                                         |
+|bottomTemperature             |double       |GLORYS bottom temperature                                                                |
+|midDepth                      |double       |Depth equivalent to the mid-range                                                        |
+|deepDepth                     |double       |Depth equivalent to maximum depth                                                        |
+|minimumDepthTemperature       |double       |If “minimumDepthInMeters” is available, temperature at that depth                        |
+|maximumDepthTemperature       |double       |If “maximumDepthInMeters” is available, temperature at that depth                        |
+|minimumDepthClosestDepth      |double       |If the exact depth of “minimumDepthInMeters” is not available, the closest depth matched |
+|maximumDepthClosestDepth      |double       |If the exact depth of “maximumDepthInMeters” is not available, the closest depth matched |
+|coraltempSST                  |double       |CoralTemp sea surface temperature                                                        |
+|murSST                        |double       |MUR sea surface temperature                                                              |
+|ostiaSST                      |double       |OSTIA sea surface temperature                                                            |
+|ostiaProduct                  |string       |Which OSTIA product was used. REP = reprocessed, NRT = near real time                    |
+|obistherm_flags               |double       |obistherm flags                                                                          |
+|h3_7                          |string       |H3 grid cell at resolution 7                                                             |
+|geometry                      |binary       |Geometry in WKB format                                                                   |
+|year                          |int32        |Year (read from the dataset structure)                                                   | 
 
-The columns `id` and `dataset_id` enable you to link and join this dataset with the OBIS database.
+The columns `_id` and `dataset_id` enable you to link and join this dataset with the OBIS database.
 
 The `geometry` column is a binary geometry format (see more about the GeoParquet [format here](https://geoparquet.org/)). The `h3_7` column contains the H3 grid code at the resolution 7. You can use this to easily aggregate data. Because Uber's H3 system is hierarchical, you can also aggregate in coarser resolutions. See more about the H3 system [here](https://h3geo.org/) and the resolutions table [here](https://h3geo.org/docs/core-library/restable).
 
@@ -58,27 +93,38 @@ For both `minimumDepthTemperature` and `maximumDepthTemperature` you should look
 * `murSST`: SST according to the MUR
 * `ostiaSST`: SST according to the OSTIA
 
+For OSTIA, there is an additional column:
+
+* `ostiaProduct`: Which OSTIA product was used. REP = reprocessed, NRT = near real time
+
 ## Flags
 
-* 0 = no problem identified  
-* 1 = date is range (i.e. the date_start and date_end are different). Note that the date that is used to retrieve the data is the date_mid/date_year column  
-* 2 = GLORYS coordinate is approximated (i.e., the target cell had no value - was NA - and we searched for the nearest valid point in the 25 nearest cells)  
-* 4 = Minimum depth closest value is more than 5 meters different than the true value  
-* 8 = Maximum depth closest value is more than 5 meters different than the true value  
-* 16 = CoralTempSST coordinate is approximated   
-* 32 = MUR SST coordinate is approximated  
-* 64 = OSTIA SST coordinate is approximated  
+* NA = no problem identified  
+* date is range (i.e. the date_start and date_end are different). Note that the date that is used to retrieve the data is the date_mid/date_year column  
+* GLORYS coordinate is approximated (i.e., the target cell had no value - was NA - and we searched for the nearest valid point in the 25 nearest cells)  
+* Minimum depth closest value is more than 5 meters different than the true value  
+* Maximum depth closest value is more than 5 meters different than the true value  
+* CoralTempSST coordinate is approximated   
+* MUR SST coordinate is approximated  
+* OSTIA SST coordinate is approximated  
 
-Flags can be summed. E.g. a flag = 6 means that date is range and surfaceTemperature and medianTemperature are approximated.
+Flags can be combined. E.g. for a record, date is range and surfaceTemperature and medianTemperature are approximated. Flags are separated by semicolons: "date is range; surfaceTemperature coordinate is approximated; medianTemperature coordinate is approximated". On `R` you can split the flags with `strsplit(flags, "; ")`.
 
 ## Sample of the dataset
 
-| AphiaID|species             |family        |id                                   |dataset_id                           |occurrenceID                                              |datasetID                              | minimumDepthInMeters| maximumDepthInMeters| decimalLongitude| decimalLatitude|eventDate                 |     date_mid| month| surfaceTemperature|midTemperature |deepTemperature | bottomTemperature|midDepth |deepDepth | minimumDepthTemperature| maximumDepthTemperature| minimumDepthClosestDepth| maximumDepthClosestDepth| coraltempSST| murSST| ostiaSST| flag| medianTemperature| medianDepth| bottomDepth|h3_7            | year|
-|-------:|:-------------------|:-------------|:------------------------------------|:------------------------------------|:---------------------------------------------------------|:--------------------------------------|--------------------:|--------------------:|----------------:|---------------:|:-------------------------|------------:|-----:|------------------:|:--------------|:---------------|-----------------:|:--------|:---------|-----------------------:|-----------------------:|------------------------:|------------------------:|------------:|------:|--------:|----:|-----------------:|-----------:|-----------:|:---------------|----:|
-|  104499|Centropages typicus |Centropagidae |52f988b5-cacf-4e4e-9d11-29288e3e1c4e |e981eab6-f849-4891-8fac-495852829456 |urn:catalog:MBA:CPR:325SB-37-6                            |https://marineinfo.org/id/dataset/216  |                    5|                   10|          -9.2400|          39.920|1986-12-12T04:48:00+00:00 | 534729600000|    12|                 NA|NA             |NA              |                NA|NA       |NA        |                      NA|                      NA|                       NA|                       NA|        14.83|     NA|       NA|    0|                NA|          NA|          NA|873931464ffffff | 1986|
-|  112100|NA                  |Cancrisidae   |7a45ded4-99c0-4043-9a35-050e8e04fe68 |b58d5ca0-1af8-48b3-993d-6c89742bb0d2 |urn:catalog:Pangaea:doi:10.1594/PANGAEA.745661:11180055_4 |https://marineinfo.org/id/dataset/2756 |                  757|                   NA|         -78.9442|         -11.538|1986-12-10                | 534556800000|    12|                 NA|NA             |NA              |                NA|NA       |NA        |                      NA|                      NA|                       NA|                       NA|        21.57|     NA|       NA|    0|                NA|          NA|          NA|878e746e0ffffff | 1986|
-|  112100|NA                  |Cancrisidae   |2b9418e5-20ea-4ac7-b012-b2afcbd1f25a |b58d5ca0-1af8-48b3-993d-6c89742bb0d2 |urn:catalog:Pangaea:doi:10.1594/PANGAEA.745661:11180055_2 |https://marineinfo.org/id/dataset/2756 |                  681|                   NA|         -78.9442|         -11.538|1986-12-10                | 534556800000|    12|                 NA|NA             |NA              |                NA|NA       |NA        |                      NA|                      NA|                       NA|                       NA|        21.57|     NA|       NA|    0|                NA|          NA|          NA|878e746e0ffffff | 1986|
-|  104499|Centropages typicus |Centropagidae |652adedd-b221-4510-ba8c-05e954d558e8 |e981eab6-f849-4891-8fac-495852829456 |urn:catalog:MBA:CPR:325SB-19-6                            |https://marineinfo.org/id/dataset/216  |                    5|                   10|          -9.4183|          42.795|1986-12-10T03:11:00+00:00 | 534556800000|    12|                 NA|NA             |NA              |                NA|NA       |NA        |                      NA|                      NA|                       NA|                       NA|        13.96|     NA|       NA|    0|                NA|          NA|          NA|87392445bffffff | 1986|
-|  149054|NA                  |Paraliaceae   |428ac009-c3fa-43e5-86bf-682211df538e |14408cc8-5d37-46d1-91a9-d838fc339ff9 |imos_apd_data:P509_251519861228_824                       |NA                                     |                   NA|                   NA|         141.5000|         -12.500|1986-12-28T00:00:00Z      | 536112000000|    12|                 NA|NA             |NA              |                NA|NA       |NA        |                      NA|                      NA|                       NA|                       NA|        30.19|     NA|       NA|    0|                NA|          NA|          NA|879ce0824ffffff | 1986|
+<!--
+r <- read_parquet("agg2/year=1982/part-0.parquet")
+r <- r |> filter(class != "Aves") |> select(-dropped, -geometry) 
+knitr::kable(r[1:5,])
+rm(r)
+-->
 
-Note: in the above table, we removed the `geometry` column.
+|_id                                  |dataset_id                           |occurrenceID                                               |datasetID                                    | AphiaID|scientificName     |species            |genus       |family          |order          |class          |phylum        |kingdom  |eventDate           |   date_start|     date_mid|     date_end| decimalLongitude| decimalLatitude|coordinatePrecision | coordinateUncertaintyInMeters| minimumDepthInMeters| maximumDepthInMeters|absence |flags    | month| surfaceTemperature| midTemperature| deepTemperature| bottomTemperature| midDepth| deepDepth| minimumDepthTemperature| maximumDepthTemperature| minimumDepthClosestDepth| maximumDepthClosestDepth| coraltempSST| murSST| ostiaSST|ostiaProduct | obistherm_flags|h3_7            |
+|:------------------------------------|:------------------------------------|:----------------------------------------------------------|:--------------------------------------------|-------:|:------------------|:------------------|:-----------|:---------------|:--------------|:--------------|:-------------|:--------|:-------------------|------------:|------------:|------------:|----------------:|---------------:|:-------------------|-----------------------------:|--------------------:|--------------------:|:-------|:--------|-----:|------------------:|--------------:|---------------:|-----------------:|--------:|---------:|-----------------------:|-----------------------:|------------------------:|------------------------:|------------:|------:|--------:|:------------|---------------:|:---------------|
+|e107dd2a-72bd-443b-b84f-1c4993f5164a |0264be1a-9d3f-495d-afcb-ac22718a70ce |2827733.00                                                 |NA                                           |  293541|Anguilla australis |Anguilla australis |Anguilla    |Anguillidae     |Anguilliformes |Teleostei      |Chordata      |Animalia |1982-01-01          | 378691200000| 378691200000| 378691200000|        148.41790|       -38.41510|0.0806              |                          9000|                   NA|                   NA|FALSE   |NO_DEPTH |     1|                 NA|             NA|              NA|                NA|       NA|        NA|                      NA|                      NA|                       NA|                       NA|           NA|     NA|    17.75|REP          |               0|87bf5b0e3ffffff |
+|f293c0db-bfea-4301-b272-3b4510e69525 |031dba90-d480-419a-a562-be9a34bc5c49 |QLD-Wildnet-4975932                                        |NA                                           |  345834|Auricularia        |NA                 |Auricularia |Auriculariaceae |Auriculariales |Agaricomycetes |Basidiomycota |Fungi    |1982-01-12          | 379641600000| 379641600000| 379641600000|        153.05939|       -26.04007|NA                  |                          2000|                    0|                  0.0|FALSE   |ON_LAND  |     1|                 NA|             NA|              NA|                NA|       NA|        NA|                      NA|                      NA|                       NA|                       NA|           NA|     NA|    26.29|REP          |              64|87be88765ffffff |
+|08222b67-79fd-4074-a14e-70118edc687d |04017518-c9c6-4801-a1c9-8019618c9b0d |Station_154_Date_27JAN1982:14:45:00.000_Gobiosoma_robustum |TPWD_HARC_Texas_Upper_Laguna_Madre_Bag_Seine |  276514|Gobiosoma robustum |Gobiosoma robustum |Gobiosoma   |Gobiidae        |Gobiiformes    |Teleostei      |Chordata      |Animalia |1982-01-27 14:45:00 | 380937600000| 380937600000| 380937600000|        -97.66917|        27.30972|NA                  |                           100|                    0|                  0.5|TRUE    |ON_LAND  |     1|                 NA|             NA|              NA|                NA|       NA|        NA|                      NA|                      NA|                       NA|                       NA|           NA|     NA|    18.69|REP          |              64|8748958b2ffffff |
+|f427d2eb-6c0f-4131-9c94-22c13d74b247 |04017518-c9c6-4801-a1c9-8019618c9b0d |Station_39_Date_22JAN1982:14:55:00.000_Gobiosoma_robustum  |TPWD_HARC_Texas_Upper_Laguna_Madre_Bag_Seine |  276514|Gobiosoma robustum |Gobiosoma robustum |Gobiosoma   |Gobiidae        |Gobiiformes    |Teleostei      |Chordata      |Animalia |1982-01-22 14:55:00 | 380505600000| 380505600000| 380505600000|        -97.30417|        27.58417|NA                  |                           100|                    0|                  0.5|TRUE    |ON_LAND  |     1|                 NA|             NA|              NA|                NA|       NA|        NA|                      NA|                      NA|                       NA|                       NA|           NA|     NA|    18.02|REP          |               0|874895572ffffff |
+|991ae291-318b-4dee-858e-ae79fbb85de5 |04017518-c9c6-4801-a1c9-8019618c9b0d |Station_42_Date_22JAN1982:15:40:00.000_Gobiosoma_robustum  |TPWD_HARC_Texas_Upper_Laguna_Madre_Bag_Seine |  276514|Gobiosoma robustum |Gobiosoma robustum |Gobiosoma   |Gobiidae        |Gobiiformes    |Teleostei      |Chordata      |Animalia |1982-01-22 15:40:00 | 380505600000| 380505600000| 380505600000|        -97.26389|        27.58778|NA                  |                           100|                    0|                  0.3|TRUE    |ON_LAND  |     1|                 NA|             NA|              NA|                NA|       NA|        NA|                      NA|                      NA|                       NA|                       NA|           NA|     NA|    17.96|REP          |               0|874895509ffffff |
+
+Note: in the table above, we removed the `geometry` column.

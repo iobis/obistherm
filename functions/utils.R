@@ -119,39 +119,45 @@ start_dask <- function(browse = TRUE) {
 }
 
 decode_flag <- function(flag, collapse = TRUE) {
-  
-  if (!is.na(flag)) {
-    flag_text <- c(
-        "1"  = "date is range",
-        "2"  = "GLORYS coordinate is approximated",
-        "4"  = "Minimum depth differs >5m from true value",
-        "8"  = "Maximum depth differs >5m from true value",
-        "16" = "CoralTempSST coordinate is approximated",
-        "32" = "MUR SST coordinate is approximated",
-        "64" = "OSTIA SST coordinate is approximated"
-    )
-    
-    flag_id <- as.numeric(names(flag_text))
-    
-    active <- flag_id[bitwAnd(flag, flag_id) > 0]
-    
-    if (length(active) == 0) {
-        return(NA)
-    }
-    
-    result <- flag_text[as.character(active)]
-    
-    if (collapse) {
-        paste(result, collapse = "; ")
-    } else {
-        result
-    }
-  } else {
-    return(NA)
-  }
 
+    .decode <- function(flag, collapse) {
+        if (!is.na(flag)) {
+            flag_text <- c(
+                "1"  = "date is range",
+                "2"  = "GLORYS coordinate is approximated",
+                "4"  = "Minimum depth differs >5m from true value",
+                "8"  = "Maximum depth differs >5m from true value",
+                "16" = "CoralTempSST coordinate is approximated",
+                "32" = "MUR SST coordinate is approximated",
+                "64" = "OSTIA SST coordinate is approximated"
+            )
+
+            flag_id <- as.numeric(names(flag_text))
+
+            active <- flag_id[bitwAnd(flag, flag_id) > 0]
+
+            if (length(active) == 0) {
+                return(NA)
+            }
+
+            result <- flag_text[as.character(active)]
+
+            if (collapse) {
+                paste(result, collapse = "; ")
+            } else {
+                result
+            }
+        } else {
+            return(NA)
+        }
+    }
+
+    unlist(
+        lapply(flag, .decode, collapse = collapse),
+        use.names = FALSE
+    )
 }
-#decode_flag(64+32+16+8+4+2+1)
+# decode_flag(64+32+16+8+4+2+1)
 
 check_venv <- function() {
     use_python(".venv/bin/python", required = TRUE)

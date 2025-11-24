@@ -64,6 +64,7 @@ data/
 __pycache__
 
 _upload.R
+_columns.csv
 
 .venv/
 .vscode/

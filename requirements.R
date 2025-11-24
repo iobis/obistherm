@@ -8,7 +8,6 @@
 req_packages <- c(
   "terra",
   "sf",
-  "sfarrow",
   "h3jsr",
   "reticulate",
   "arrow",
@@ -35,6 +34,13 @@ for (i in seq_along(req_packages)) {
     install.packages(req_packages[i])
   }
 }
-
 # Install Python packages
-reticulate::py_install(envname = "./.venv", c("xarray", "zarr", "copernicusmarine", "dask[distributed]", "bokeh>=3.1.0"), pip = TRUE)
+reticulate::py_install(envname = "./.venv", c(
+  "xarray",
+  "zarr",
+  "copernicusmarine",
+  "dask[distributed]",
+  "bokeh>=3.1.0",
+  "geopandas",
+  "pyarrow"
+), pip = TRUE)

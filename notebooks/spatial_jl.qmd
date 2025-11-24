@@ -38,12 +38,12 @@ DBInterface.execute(con, "install spatial;")
 DBInterface.execute(con, "load spatial;")
 
 ds_filt = DBInterface.execute(con, """
-    SELECT species, coraltempSST, geometry, ST_Point2DFromWKB(geometry)
+    SELECT species, coraltempSST
     FROM read_parquet('$(local_folder)/**/*.parquet', hive_partitioning=1)
     WHERE species = 'Leptuca thayeri'
       -- And then we use the spatial extension here
       AND ST_Intersects(geometry, ST_GeomFromText('$(wkt)'))
-    GROUP BY species
+    GROUP BY species, coraltempSST
 """) |> DataFrame
 
 # Close connection when done
