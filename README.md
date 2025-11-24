@@ -127,7 +127,11 @@ lthay <- retrieve_data(scientificname = "Leptuca thayeri", year = 2020,
 # Use return_query = T to return only the DBI/DuckDB query, that you can use to access the data
 lthay <- retrieve_data(scientificname = "Leptuca thayeri", year = 2020,
                        return_query = T)
+```
 
+Or directly through DuckDB:
+
+``` r
 # Example using duckDB with the S3 access point:
 query <- "
 select *
@@ -159,7 +163,8 @@ gdf
 
 ## Examples
 
-NOTE: on all examples, we use a local copy stored in a folder called "aggregated". Change it to your local folder or access through the S3 access point.
+> [NOTE]
+> On all examples, we use a local copy stored in a folder called "aggregated". Change it to your local folder or access through the S3 access point.
 
 ### R
 
