@@ -55,6 +55,7 @@ fs::dir_create(outfolder)
 fs::dir_create(outfolder_final)
 filename <- "var=thetao"
 coordnames <- c("decimalLongitude", "decimalLatitude")
+mur_info <- get_mur_ds()
 
 # Define range of dates to get information
 range_year <- 1982:lubridate::year(Sys.Date())
@@ -106,15 +107,18 @@ obis_ds <- get_obis(obis_source = settings$obis_source) |>
   partition_by_year() |>
   open_db()
 
-log_df <- data.frame(
-  year = rep(range_year, each = 12),
-  month = rep(range_month, length(range_year)),
-  status_glorys = NA,
-  status_coraltemp = NA,
-  status_mur = NA,
-  status_ostia = NA,
-  status_general = NA
-)
+if (!st$exists("log")) {
+  log_df <- data.frame(
+    year = rep(range_year, each = 12),
+    month = rep(range_month, length(range_year)),
+    status_glorys = NA,
+    status_coraltemp = NA,
+    status_mur = NA,
+    status_ostia = NA,
+    status_general = NA
+  )
+  st$set("log", log_df)
+}
 
 if (is_test) {
   range_year <- 2010
@@ -124,13 +128,24 @@ if (is_test) {
 # Get data ------
 for (yr in seq_along(range_year)) {
   sel_year <- range_year[yr]
-  cat("Downloading data for year", sel_year, "\n")
+  cat("Processing year", sel_year, "\n")
+
+  # Check if any of the year is pending
+  st_yr <- lapply(st$mget(paste0(sel_year, 1:12)), \(x) !is.null(x)) |> unlist()
+  if (!all(st_yr)) {
+    cat(sum(!st_yr), "months to be processed.\n")
+  } else {
+    cat("Year already processed, skipping.\n")
+    next
+  }
 
   # Load data for a specific year and month
   obis_sel <- load_data_year(sel_year, obis_ds)
   cat(nrow(obis_sel), "total points for this year.\n")
 
   for (mo in seq_along(range_month)) {
+    log_df <- st$get("log")
+
     sel_month <- range_month[mo]
     st_cod <- paste0(sel_year, sel_month)
     cat("Proccessing month", sel_month, "\n")
@@ -166,19 +181,21 @@ for (yr in seq_along(range_year)) {
           )
 
       # GLORYS PRODUCT ------
-      if (sel_year %in% glorys_range) {
+      glorys_date <- as.Date(paste0(sel_year, "-", sprintf("%02d", sel_month), "-01"))
+      if (sel_year %in% glorys_range && glorys_date <= glorys1_max_date) {
         cat("Downloading GLORYS\n")
-        if (as.Date(paste0(sel_year, "-", sprintf("%02d", sel_month), "-01")) <= glorys1_max_date) {
-          dataset <- "cmems_mod_glo_phy_my_0.083deg_P1M-m"
-        } else {
-          dataset <- "cmems_mod_glo_phy_myint_0.083deg_P1M-m"
-        }
+        # Interim no longer available, modified conditional to proceed only if year and month are available
+        # if (as.Date(paste0(sel_year, "-", sprintf("%02d", sel_month), "-01")) <= glorys1_max_date) {
+        #   dataset <- "cmems_mod_glo_phy_my_0.083deg_P1M-m"
+        # } else {
+        #   dataset <- "cmems_mod_glo_phy_myint_0.083deg_P1M-m"
+        # }
 
         outf_temp_glorys <- cm$get(
           dataset_id = dataset,
           username = .user,
           password = .pwd,
-          filter = paste0("*", sel_year, sprintf("%02d", sel_month), "*"),
+          filter = paste0("*mean_", sel_year, sprintf("%02d", sel_month), "*"),
           output_directory = "temp/",
           no_directories = T
         )
@@ -314,7 +331,7 @@ for (yr in seq_along(range_year)) {
           df <- try(download.file(url = paste0(
             "https://coastwatch.pfeg.noaa.gov/erddap/files/NOAA_DHW_monthly/ct5km_sst_ssta_monthly_v31_",
             sel_year, sprintf("%02d", sel_month), ".nc"),
-            destfile = cttemp, mode = "wget"), silent = T)
+            destfile = cttemp, method = "libcurl", mode = "wb"), silent = T)
           if (!inherits(df, "try-error")) {
             proceed <- TRUE
             coraltemp_ds <- cttemp
@@ -382,8 +399,8 @@ for (yr in seq_along(range_year)) {
               "-GHRSST-SSTfnd-MUR-GLOB-v02.0-fv04.1.nc"
             )
           )
-          df <- try(download.file(url = url_try,
-            destfile = murtemp, mode = "wget"), silent = T)
+          df <- safe_download_mur(url = url_try,
+            destfile = murtemp, mur_info = mur_info, method = "libcurl", mode = "wb")
           if (!inherits(df, "try-error")) {
             proceed <- TRUE
             mur_ds <- murtemp
@@ -451,11 +468,13 @@ for (yr in seq_along(range_year)) {
               no_directories = T
             )
           )
+        if (!inherits(df, "try-error")) {
+          df <- lapply(df$files, \(x) x$file_path)
+          df <- try(check_ifdate(df, sel_year, sel_month, target = c(ifelse(sel_month == 2, 28, 30), 31)), silent = TRUE)
+        }
 
         if (!inherits(df, "try-error")) {
           cat("Extracting OSTIA\n")
-          df <- lapply(df$files, \(x) x$file_path)
-          df <- check_ifdate(df, sel_year, sel_month, target = c(28, 31))
           df_ds <- xr$open_mfdataset(unlist(lapply(df, as.character), recursive = T))
           df_ds <- df_ds$analysed_sst
           df_ds <- df_ds$mean(dim = "time", skipna = T)
@@ -528,15 +547,20 @@ for (yr in seq_along(range_year)) {
       log_df[log_df$year == sel_year & log_df$month == sel_month, "status_general"] <- "concluded"
     } else {
       if (st$exists(st_cod)) {
-        log_df[log_df$year == sel_year & log_df$month == sel_month, "status_general"] <- "already_done"
+        cat("Already done\n")
       } else {
         log_df[log_df$year == sel_year & log_df$month == sel_month, "status_general"] <- "skipped"
       }
     }
+    cat("Month log:\n")
+    print(log_df[log_df$year == sel_year & log_df$month == sel_month, ])
+    cat("========================\n\n")
+    st$set("log", log_df)
   }
 }
 
 fs::dir_create("logs")
+log_df <- st$get("log")
 write.csv(log_df, paste0("logs/log_", format(Sys.Date(), "%Y%m%d"), ".csv"), row.names = F)
 
 # END

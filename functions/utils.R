@@ -109,6 +109,8 @@ check_depth_diff <- function(depth_original, depth_new, limit = 5) {
 start_dask <- function(browse = TRUE) {
     da <- import("dask")
     dd <- import("dask.distributed")
+    os <- import("os")
+    os$environ["BOKEH_SESSION_TOKEN_EXPIRATION"] <- "86400"
     client <- dd$Client()
     if (browse) {
         browseURL("http://localhost:8787/status")
@@ -187,4 +189,39 @@ check_ifdate <- function(files, sel_year, sel_month, start_chr = "/", target = N
         }
         return(files)
     }
+}
+
+get_mur_ds <- function() {
+    tf <- tempfile(fileext = ".csv")
+    download.file("https://coastwatch.pfeg.noaa.gov/erddap/files/jplMURSST41mday/.csv", tf)
+    read.csv(tf)
+}
+
+safe_download_mur <- function(url, destfile, mur_info, ...) {
+    target_size <- mur_info[mur_info$Name == basename(url), "Size"]
+    if (is.null(target_size) || length(target_size) < 1) target_size <- 500*1000*1000
+    td <- try(download.file(url, destfile, ...), silent = T)
+    if (inherits(td, "try-error")) {
+        fsiz <- 0
+    } else {
+        fsiz <- file.size(destfile)
+    }
+    if (fsiz < target_size) {
+        message("Download failed. Retrying...")
+        max_retry <- 2
+        downloaded <- FALSE
+        tried <- 0
+        while (!downloaded & tried < max_retry) {
+            tried <- tried + 1
+            td <- try(download.file(url, destfile, ...), silent = T)
+            if (!inherits(td, "try-error")) {
+                fsiz <- file.size(destfile)
+                if (fsiz >= target_size) downloaded <- TRUE
+            }
+        }
+    } else {
+        downloaded <- TRUE
+    }
+    if (!downloaded) message("Problem when downloading file for MUR")
+    return(td)
 }

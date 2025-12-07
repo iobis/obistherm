@@ -1,0 +1,39 @@
+# Clean up and refit
+library(storr)
+settings <- yaml::read_yaml("settings.yml", readLines.warn = FALSE)
+outfolder_final <- settings$outfolder_final
+filename <- "var=thetao"
+
+st <- storr_rds("control_storr")
+
+log_df <- st$get("log")
+
+which_failed <- apply(log_df, 1, \(x) {
+    any("failed_extract" %in% x[3:6])
+})
+which_failed <- which(which_failed)
+
+cn <- colnames(log_df)[3:6]
+
+for (k in which_failed) {
+    sel_log <- log_df[k,]
+    which_failed_l <- cn[which(sel_log[,3:6] %in% "failed_extract")]
+    if (length(which_failed_l) > 1) {
+        log_df[k, 3:7] <- NA
+    } else {
+        if (which_failed_l == "status_mur") {
+            if (sel_log$year == 2002 & sel_log$month < 6) {
+                next
+            } else {
+                log_df[k, 3:7] <- NA
+            }
+        } else {
+            log_df[k, 3:7] <- NA
+        }
+    }
+    st$del(paste0(sel_log$year, sel_log$month))
+    outf <- paste0(outfolder_final, "/", filename, "_year=", sel_log$year, "_month=", sel_log$month, ".parquet")
+    if (file.exists(outf)) {
+        fs::file_delete(outf)
+    }
+}
