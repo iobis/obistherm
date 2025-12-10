@@ -1,14 +1,5 @@
 load_data_year <- function(sel_year, obis_filt) {
 
-    # eval(parse(text = paste0(
-    #     "obis_sel <- obis_filt %>%
-    #     filter(date_year ==", sel_year, "', date_year)) %>%
-    #     collect()"
-    # )))
-    # obis_sel <- obis_filt %>%
-    #     filter(date_year == sel_year) %>%
-    #     collect()
-
     obis_sel <- dbGetQuery(obis_filt,
                            paste0("SELECT * FROM obis WHERE date_year = ", sel_year, ";"))
     obis_sel <- tibble::tibble(obis_sel)

@@ -37,3 +37,13 @@ for (k in which_failed) {
         fs::file_delete(outf)
     }
 }
+
+na_entries <- which(is.na(log_df$status_general))
+
+for (i in na_entries) {
+    st$del(paste0(log_df$year[i], log_df$month[i]))
+    outf <- paste0(outfolder_final, "/", filename, "_year=", log_df$year[i], "_month=", log_df$month[i], ".parquet")
+    if (file.exists(outf)) {
+        fs::file_delete(outf)
+    }
+}

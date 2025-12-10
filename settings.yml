@@ -19,3 +19,8 @@ obis_source: '/Volumes/OBIS2/data/obis_data/'
 # If you stored this as environment variables, you can leave these fields empty.
 copernicus_user: NULL
 copernicus_password: NULL
+
+# Safe limits for number of points to process
+# If the number of points to process in a month is higher than this value,
+# the process will divide in batches of this size
+safe_limit_points: 4e6
