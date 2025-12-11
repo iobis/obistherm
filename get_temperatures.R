@@ -107,7 +107,7 @@ glorys1_max_date <- max(ds_sample$time$to_dataframe()[, 1])
 
 # Open OBIS dataset ------
 obis_ds <- get_obis(obis_source = settings$obis_source) |>
-  partition_by_year(skip = T) |>
+  partition_by_year() |>
   open_db()
 
 if (!st$exists("log")) {
