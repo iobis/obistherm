@@ -33,6 +33,7 @@ source("functions/download_data.R")
 source("functions/utils.R")
 source("functions/get_depths.R")
 source("functions/data_load.R")
+source("functions/process_functions.R")
 settings <- yaml::read_yaml("settings.yml", readLines.warn = FALSE)
 # Load python libraries
 check_venv()
@@ -45,6 +46,7 @@ check_user(settings$copernicus_user, settings$copernicus_password)
 options(timeout = 999999999)
 is_test <- ifelse(settings$mode == "test", TRUE, FALSE)
 safe_limit <- settings$safe_limit_points |> as.integer()
+download_lib <- settings$download_library
 
 # Start Dask for parallel processing
 start_dask(browse = ifelse(interactive(), TRUE, FALSE))
@@ -105,7 +107,7 @@ glorys1_max_date <- max(ds_sample$time$to_dataframe()[, 1])
 
 # Open OBIS dataset ------
 obis_ds <- get_obis(obis_source = settings$obis_source) |>
-  partition_by_year() |>
+  partition_by_year(skip = T) |>
   open_db()
 
 if (!st$exists("log")) {
@@ -129,35 +131,37 @@ if (is_test) {
 # Get data ------
 for (yr in seq_along(range_year)) {
   sel_year <- range_year[yr]
-  cat("Processing year", sel_year, "\n")
+  catg("Processing year", sel_year)
 
-  # Check if any of the year is pending
+  # Check if any month of the year is pending
   st_yr <- lapply(st$mget(paste0(sel_year, 1:12)), \(x) !is.null(x)) |> unlist()
   if (!all(st_yr)) {
-    cat(sum(!st_yr), "months to be processed.\n")
+    catn(sum(!st_yr), "months to be processed.")
   } else {
-    cat("Year already processed, skipping.\n")
+    catn("Year already processed, skipping.")
     next
   }
 
   # Load data for a specific year and month
-  obis_sel <- load_data_year(sel_year, obis_ds)
-  cat(nrow(obis_sel), "total points for this year.\n")
+  obis_sel <- load_data_year(sel_year, obis_ds, outfolder)
+  catn(nrow(obis_sel), "total points for this year.")
 
   for (mo in seq_along(range_month)) {
+    # Get log file
     log_df <- st$get("log")
 
     sel_month <- range_month[mo]
     st_cod <- paste0(sel_year, sel_month)
-    cat("Proccessing month", sel_month, "\n")
+    catn("Proccessing month", sel_month)
 
     if (lubridate::year(Sys.Date()) == sel_year && lubridate::month(Sys.Date()) == sel_month) {
-      cat("Skipping current month\n")
+      catn("Skipping current month")
       next
     }
 
+    # Load data for month
     obis_sel_month_total <- filter_data_month(obis_sel, sel_month)
-    cat(nrow(obis_sel_month_total), "total points for this month.\n")
+    catn(nrow(obis_sel_month_total), "total points for this month.")
 
     if (nrow(obis_sel_month_total) > 0 && !st$exists(st_cod)) {
 
@@ -166,14 +170,16 @@ for (yr in seq_along(range_year)) {
           seq_len(nrow(obis_sel_month_total)),
           ceiling(seq_len(nrow(obis_sel_month_total)) / safe_limit)
         )
-        cat("Dataset with more rows than safety limit. Dividing in parts.\n")
+        catn("Dataset with more rows than safety limit. Dividing in parts.")
       } else {
         ds_parts <- list(seq_len(nrow(obis_sel_month_total)))
       }
+      total_parts <- length(ds_parts)
+      st$set(st_cod, "started")
 
-      for (part in seq_along(ds_parts)) {
+      for (part in seq_len(total_parts)) {
 
-        if (length(ds_parts) > 1) cat("Processing part", part, "out of", length(ds_parts), "\n")
+        if (total_parts > 1) catn("Processing part", part, "out of", total_parts)
 
         obis_sel_month <- obis_sel_month_total[ds_parts[[part]],]
 
@@ -196,25 +202,19 @@ for (yr in seq_along(range_year)) {
           flag = obis_sel_month$flagDate
         )
 
-        st$set(st_cod, "started")
-
         obis_dataset <- obis_sel_month |>
             select(decimalLongitude, decimalLatitude, temp_ID,
               depth_min = minimumDepthInMeters, depth_max = maximumDepthInMeters
             )
 
+
+        # PROCESS PRODUCTS --------
         # GLORYS PRODUCT ------
         glorys_date <- as.Date(paste0(sel_year, "-", sprintf("%02d", sel_month), "-01"))
         if (sel_year %in% glorys_range && glorys_date <= glorys1_max_date) {
-          # Interim no longer available, modified conditional to proceed only if year and month are available
-          # if (as.Date(paste0(sel_year, "-", sprintf("%02d", sel_month), "-01")) <= glorys1_max_date) {
-          #   dataset <- "cmems_mod_glo_phy_my_0.083deg_P1M-m"
-          # } else {
-          #   dataset <- "cmems_mod_glo_phy_myint_0.083deg_P1M-m"
-          # }
 
           if (part == 1) {
-            cat("Downloading GLORYS\n")
+            catn("Downloading GLORYS")
             outf_temp_glorys <- cm$get(
               dataset_id = dataset,
               username = .user,
@@ -228,128 +228,33 @@ for (yr in seq_along(range_year)) {
               (\(x) unlist(lapply(x, as.character), use.names = F))()
           }
 
-          obis_dataset <- obis_dataset |>
-            mutate(
-              to_remove_dmin = ifelse(is.na(depth_min), TRUE, FALSE),
-              to_remove_dmax = ifelse(is.na(depth_max), TRUE, FALSE),
-              depth_min = ifelse(is.na(depth_min), 0, depth_min),
-              depth_max = ifelse(is.na(depth_max), 0, depth_max),
-              depth_surface = 0,
-              to_remove_nacord = FALSE,
-              to_remove_naaprox = FALSE
-            )
+          glorys_result <- process_glorys(all_vals, obis_dataset, outf_temp_glorys, sel_month, sel_year)
 
-          # See which are NA
-          cat("Processing GLORYS\n")
-          coords_na <- extract_from_nc(outf_temp_glorys, "thetao", obis_dataset[, 1:2], depth = 0L)
-          coords_na <- which(is.na(coords_na[, "value"]))
-
-          if (length(coords_na) > 0) {
-            new_coords <- get_nearby(outf_temp_glorys, "thetao", obis_dataset[coords_na, 1:2], mode = "25", depth = 0L)
-            na_to_rm <- which(is.na(new_coords[, "value"]))
-            na_approx <- which(!is.na(new_coords[, "value"]))
-
-            obis_dataset$decimalLongitude[coords_na[na_approx]] <- new_coords$new_lon[na_approx]
-            obis_dataset$decimalLatitude[coords_na[na_approx]] <- new_coords$new_lat[na_approx]
-            obis_dataset$to_remove_nacord[coords_na[na_to_rm]] <- TRUE
-            obis_dataset$to_remove_naaprox[coords_na[na_approx]] <- TRUE
+          if (glorys_result$status == "succeeded") {
+            all_vals <- glorys_result$result
+            st$set(st_cod, c(st$get(st_cod), paste0("glorys_", part)))
           }
+          rm(glorys_result)
 
-          ds_temp_glorys <- xr$open_dataset(outf_temp_glorys, chunks = "auto")
-          valid_depths <- get_depths(ds_temp_glorys, obis_dataset,
-            paste(sel_year, sprintf("%02d", sel_month), "01", sep = "-"))
-
-          valid_depths <- valid_depths |>
-            mutate(to_remove_ddeep = ifelse(is.na(depth_deep), TRUE, FALSE),
-                    to_remove_dmid = ifelse(is.na(depth_mid), TRUE, FALSE)) |>
-            mutate(depth_deep = ifelse(is.na(depth_deep), 0, depth_deep),
-                    depth_mid = ifelse(is.na(depth_mid), 0, depth_mid))
-
-          obis_dataset <- left_join(obis_dataset, valid_depths, by = "temp_ID")
-
-          to_remove <- obis_dataset |>
-            select(starts_with("to_remove"))
-
-          obis_dataset <- obis_dataset |>
-            select(!starts_with("to_remove"))
-
-          success <- try(download_temp("glorys", ds_temp_glorys, obis_dataset, sel_month, sel_year))
-
-          if (!inherits(success, "try-error")) {
-            glorys_data <- success |>
-              select(temp_ID, depth_type, value) |>
-              pivot_wider(names_from = depth_type, values_from = value)
-
-            glorys_data_depths <- success |>
-              select(temp_ID, depth_type, depth) |>
-              mutate(depth_type = paste0(depth_type, "_depth")) |>
-              pivot_wider(names_from = depth_type, values_from = depth)
-
-            rm(success)
-
-            glorys_data <- left_join(glorys_data, glorys_data_depths, by = "temp_ID")
-            glorys_data <- tibble::as_tibble(apply(glorys_data, 2, function(x) {
-              x[is.nan(x)] <- NA
-              x
-            }))
-
-            # Input data
-            all_vals$surfaceTemperature[all_vals$temp_ID == glorys_data$temp_ID] <- glorys_data$depth_surface
-            all_vals$midTemperature[all_vals$temp_ID == glorys_data$temp_ID] <- glorys_data$depth_mid
-            all_vals$deepTemperature[all_vals$temp_ID == glorys_data$temp_ID] <- glorys_data$depth_deep
-            all_vals$bottomTemperature[all_vals$temp_ID == glorys_data$temp_ID] <- glorys_data$depth_bottom
-
-            all_vals$minimumDepthTemperature[all_vals$temp_ID == glorys_data$temp_ID] <- glorys_data$depth_min
-            all_vals$maximumDepthTemperature[all_vals$temp_ID == glorys_data$temp_ID] <- glorys_data$depth_max
-
-            all_vals$midDepth[all_vals$temp_ID == glorys_data$temp_ID] <- glorys_data$depth_mid_depth
-            all_vals$deepDepth[all_vals$temp_ID == glorys_data$temp_ID] <- glorys_data$depth_deep_depth
-
-            all_vals$minimumDepthClosestDepth[all_vals$temp_ID == glorys_data$temp_ID] <- glorys_data$depth_min_depth
-            all_vals$maximumDepthClosestDepth[all_vals$temp_ID == glorys_data$temp_ID] <- glorys_data$depth_max_depth
-
-            all_vals$minimumDepthTemperature[to_remove$to_remove_dmin] <- NA
-            all_vals$minimumDepthClosestDepth[to_remove$to_remove_dmin] <- NA
-
-            all_vals$maximumDepthTemperature[to_remove$to_remove_dmax] <- NA
-            all_vals$maximumDepthClosestDepth[to_remove$to_remove_dmax] <- NA
-
-            all_vals$midTemperature[to_remove$to_remove_dmid] <- NA
-            all_vals$midDepth[to_remove$to_remove_dmid] <- NA
-
-            all_vals$deepTemperature[to_remove$to_remove_ddeep] <- NA
-            all_vals$deepDepth[to_remove$to_remove_ddeep] <- NA
-
-            all_vals[to_remove$to_remove_nacord,c("surfaceTemperature", "midTemperature",
-              "deepTemperature", "midDepth", "deepDepth", "minimumDepthTemperature", "maximumDepthTemperature",
-            "minimumDepthClosestDepth", "maximumDepthClosestDepth")] <- NA
-
-            all_vals$flag[to_remove$to_remove_naaprox] <- all_vals$flag[to_remove$to_remove_naaprox] + 2
-
-            depth_diff_min <- check_depth_diff(obis_dataset$depth_min, all_vals$minimumDepthClosestDepth)
-            depth_diff_max <- check_depth_diff(obis_dataset$depth_max, all_vals$maximumDepthClosestDepth)
-
-            all_vals$flag[depth_diff_min] <- all_vals$flag[depth_diff_min] + 4
-            all_vals$flag[depth_diff_max] <- all_vals$flag[depth_diff_max] + 8
-
-            if (part == length(ds_parts)) fs::file_delete(outf_temp_glorys)
-
-            st$set(st_cod, c(st$get(st_cod), "glorys"))
-            log_df[log_df$year == sel_year & log_df$month == sel_month, "status_glorys"] <- "concluded"
-          } else {
-            st$set(st_cod, c(st$get(st_cod), "glorys"))
-            log_df[log_df$year == sel_year & log_df$month == sel_month, "status_glorys"] <- "failed_extract"
+          if (part == total_parts) {
+            if (sum(grepl("glorys", st$get(st_cod))) == total_parts) {
+              log_df <- log_df |> set_success(sel_year, sel_month, "status_glorys")
+            } else {
+              log_df <- log_df |> set_failed(sel_year, sel_month, "status_glorys")
+            }
+            fs::file_delete(outf_temp_glorys)
           }
         } else {
-          log_df[log_df$year == sel_year & log_df$month == sel_month, "status_glorys"] <- "unavailable"
+          log_df <- log_df |> set_unavailable(sel_year, sel_month, "status_glorys")
         }
+
 
         # CORALTEMP PRODUCT ----
         if (sel_year %in% coraltemp_range) {
           cttemp <- file.path(outfolder, "coraltemp.nc")
 
           if (part == 1) {
-            cat("Downloading CoralTemp\n")
+            catn("Downloading CoralTemp")
             if (nrow(obis_dataset) <= 100) {
               coraltemp_ds <- "https://coastwatch.pfeg.noaa.gov/erddap/griddap/NOAA_DHW_monthly"
               proceed <- TRUE
@@ -357,7 +262,7 @@ for (yr in seq_along(range_year)) {
               df <- try(download.file(url = paste0(
                 "https://coastwatch.pfeg.noaa.gov/erddap/files/NOAA_DHW_monthly/ct5km_sst_ssta_monthly_v31_",
                 sel_year, sprintf("%02d", sel_month), ".nc"),
-                destfile = cttemp, method = "libcurl", mode = "wb"), silent = T)
+                destfile = cttemp, method = download_lib, mode = "wb"), silent = T)
               if (!inherits(df, "try-error")) {
                 proceed <- TRUE
                 coraltemp_ds <- cttemp
@@ -368,40 +273,27 @@ for (yr in seq_along(range_year)) {
           }
 
           if (proceed) {
-            cat("Extracting CoralTemp\n")
-            success <- try(download_temp("coraltemp", coraltemp_ds, obis_dataset, sel_month, sel_year))
+            coraltemp_result <- process_coraltemp(all_vals, obis_dataset, coraltemp_ds, sel_month, sel_year)
           } else {
-            success <- try(stop("error"), silent = T)
+            coraltemp_result <- list(status = "failed")
           }
 
-          if (!inherits(success, "try-error")) {
-            cat("Processing CoralTemp\n")
+          if (coraltemp_result$status == "succeeded") {
+            all_vals <- coraltemp_result$result
+            st$set(st_cod, c(st$get(st_cod), paste0("coraltemp_", part)))
+          }
+          rm(coraltemp_result)
 
-            success$value[is.nan(success$value)] <- NA
-            all_vals$coraltempSST <- success$value
-
-            na_to_solve <- which(is.na(success[, "value"]))
-
-            if (length(na_to_solve) > 0) {
-              nearby_ct <- get_nearby(coraltemp_ds, "sea_surface_temperature",
-                                    obis_dataset[na_to_solve, c("decimalLongitude", "decimalLatitude")],
-                                    mode = "25", depth = NULL,
-                                    date = paste(sel_year, sprintf("%02d", sel_month), "15", sep = "-"))
-
-              all_vals$coraltempSST[na_to_solve] <- nearby_ct$value
-              all_vals$flag[na_to_solve[!is.na(nearby_ct$value)]] <-
-                all_vals$flag[na_to_solve[!is.na(nearby_ct$value)]] + 16
+          if (part == total_parts) {
+            if (sum(grepl("coraltemp", st$get(st_cod))) == total_parts) {
+              log_df <- log_df |> set_success(sel_year, sel_month, "status_coraltemp")
+            } else {
+              log_df <- log_df |> set_failed(sel_year, sel_month, "status_coraltemp")
             }
-
-            st$set(st_cod, c(st$get(st_cod), "coraltemp"))
-            log_df[log_df$year == sel_year & log_df$month == sel_month, "status_coraltemp"] <- "concluded"
-          } else {
-            st$set(st_cod, c(st$get(st_cod), "coraltemp"))
-            log_df[log_df$year == sel_year & log_df$month == sel_month, "status_coraltemp"] <- "failed_extract"
+            if (file.exists(cttemp)) fs::file_delete(cttemp)
           }
-          if (part == length(ds_parts) && file.exists(cttemp)) fs::file_delete(cttemp)
         } else {
-          log_df[log_df$year == sel_year & log_df$month == sel_month, "status_coraltemp"] <- "unavailable"
+          log_df <- log_df |> set_unavailable(sel_year, sel_month, "status_coraltemp")
         }
 
 
@@ -410,27 +302,13 @@ for (yr in seq_along(range_year)) {
           murtemp <- file.path(outfolder, "murtemp.nc")
 
           if (part == 1) {
-            cat("Downloading MUR\n")
+            catn("Downloading MUR")
             if (nrow(obis_dataset) <= 100) {
               mur_ds <- "https://coastwatch.pfeg.noaa.gov/erddap/griddap/jplMURSST41mday"
               proceed <- TRUE
             } else {
-              url_try <- c(
-                paste0(
-                  "https://coastwatch.pfeg.noaa.gov/erddap/files/jplMURSST41mday/",
-                  paste0(
-                    sel_year, sprintf("%02d", sel_month), "01", sel_year, sprintf("%02d", sel_month),
-                    lubridate::days_in_month(
-                      as.Date(paste0(sel_year, sprintf("%02d", sel_month), "01"),
-                        format = "%Y%m%d"
-                      )
-                    )
-                  ),
-                  "-GHRSST-SSTfnd-MUR-GLOB-v02.0-fv04.1.nc"
-                )
-              )
-              df_mur <- safe_download_mur(url = url_try,
-                destfile = murtemp, mur_info = mur_info, method = "libcurl", mode = "wb")
+              df_mur <- safe_download_mur(sel_year = sel_year, sel_month = sel_month,
+                destfile = murtemp, mur_info = mur_info, method = download_lib, mode = "wb")
               if (!inherits(df_mur, "try-error")) {
                 proceed <- TRUE
                 mur_ds <- murtemp
@@ -441,40 +319,27 @@ for (yr in seq_along(range_year)) {
           }
 
           if (proceed) {
-            cat("Extracting MUR\n")
-            success <- try(download_temp("mur", mur_ds, obis_dataset, sel_month, sel_year))
+            mur_result <- process_mur(all_vals, obis_dataset, mur_ds, sel_month, sel_year)
           } else {
-            success <- try(stop("error"), silent = T)
+            mur_result <- list(status = "failed")
           }
 
-          if (!inherits(success, "try-error")) {
-            cat("Processing MUR\n")
+          if (mur_result$status == "succeeded") {
+            all_vals <- mur_result$result
+            st$set(st_cod, c(st$get(st_cod), paste0("mur_", part)))
+          }
+          rm(mur_result)
 
-            success$value[is.nan(success$value)] <- NA
-            all_vals$murSST <- success$value
-
-            na_to_solve <- which(is.na(success[, "value"]))
-
-            if (length(na_to_solve) > 0) {
-              nearby_mur <- get_nearby(mur_ds, "sst",
-                                       obis_dataset[na_to_solve, c("decimalLongitude", "decimalLatitude")],
-                                       mode = "25", depth = NULL,
-                                       date = paste(sel_year, sprintf("%02d", sel_month), "15", sep = "-"))
-
-              all_vals$murSST[na_to_solve] <- nearby_mur$value
-              all_vals$flag[na_to_solve[!is.na(nearby_mur$value)]] <-
-                all_vals$flag[na_to_solve[!is.na(nearby_mur$value)]] + 32
+          if (part == total_parts) {
+            if (sum(grepl("mur", st$get(st_cod))) == total_parts) {
+              log_df <- log_df |> set_success(sel_year, sel_month, "status_mur")
+            } else {
+              log_df <- log_df |> set_failed(sel_year, sel_month, "status_mur")
             }
-
-            st$set(st_cod, c(st$get(st_cod), "mur"))
-            log_df[log_df$year == sel_year & log_df$month == sel_month, "status_mur"] <- "concluded"
-          } else {
-            st$set(st_cod, c(st$get(st_cod), "mur"))
-            log_df[log_df$year == sel_year & log_df$month == sel_month, "status_mur"] <- "failed_extract"
+            if (file.exists(murtemp)) fs::file_delete(murtemp)
           }
-          if (part == length(ds_parts) && file.exists(murtemp)) fs::file_delete(murtemp)
         } else {
-          log_df[log_df$year == sel_year & log_df$month == sel_month, "status_mur"] <- "unavailable"
+          log_df <- log_df |> set_unavailable(sel_year, sel_month, "status_mur")
         }
 
 
@@ -491,7 +356,7 @@ for (yr in seq_along(range_year)) {
           ostia_ds <- file.path(outfolder, "ostiatemp.nc")
 
           if (part == 1) {
-            cat("Downloading OSTIA\n")
+            catn("Downloading OSTIA")
             df_ostia <- try(
                 cm$get(
                   dataset_id = ostia_id,
@@ -504,61 +369,45 @@ for (yr in seq_along(range_year)) {
               )
             if (!inherits(df_ostia, "try-error")) {
               df_ostia <- lapply(df_ostia$files, \(x) x$file_path)
-              df_ostia <- try(check_ifdate(df_ostia, sel_year, sel_month, target = c(ifelse(sel_month == 2, 28, 30), 31)), silent = TRUE)
+              df_ostia <- try(check_ifdate(df_ostia, sel_year, sel_month,
+                                           target = c(ifelse(sel_month == 2, 28, 30), 31)),
+                              silent = TRUE)
+              if (!inherits(df_ostia, "try-error")) {
+                df_ds <- xr$open_mfdataset(unlist(lapply(df_ostia, as.character), recursive = T))
+                df_ds <- df_ds$analysed_sst
+                df_ds <- df_ds$mean(dim = "time", skipna = T)
+                df_ds <- df_ds$to_dataset()
+                df_ds <- df_ds$expand_dims(
+                  time = pd$to_datetime(paste0(sel_year, "-", sprintf("%02d", sel_month), "-01"))
+                )
+                df_ds$to_netcdf(ostia_ds)
+                fs::file_delete(unlist(lapply(df_ostia, as.character), recursive = T))
+              }
             }
           }
 
           if (!inherits(df_ostia, "try-error")) {
-            cat("Extracting OSTIA\n")
-            if (part == 1) {
-              df_ds <- xr$open_mfdataset(unlist(lapply(df_ostia, as.character), recursive = T))
-              df_ds <- df_ds$analysed_sst
-              df_ds <- df_ds$mean(dim = "time", skipna = T)
-              df_ds <- df_ds$to_dataset()
-              df_ds <- df_ds$expand_dims(
-                time = pd$to_datetime(paste0(sel_year, "-", sprintf("%02d", sel_month), "-01"))
-              )
-              df_ds$to_netcdf(ostia_ds)
-              fs::file_delete(unlist(lapply(df_ostia, as.character), recursive = T))
-            }
-
-            ostia_ds_open <- xr$open_dataset(ostia_ds)
-            success <- try(download_temp("ostia", ostia_ds_open, obis_dataset, sel_month, sel_year))
+            ostia_result <- process_ostia(all_vals, obis_dataset, ostia_ds, sel_month, sel_year, ostia_prod)
           } else {
-            success <- try(stop("error"), silent = T)
+            ostia_result <- list(status = "failed")
           }
 
-          if (!inherits(success, "try-error")) {
-            cat("Processing OSTIA\n")
-
-            success$value[is.nan(success$value)] <- NA
-            all_vals$ostiaSST <- success$value
-
-            na_to_solve <- which(is.na(success[, "value"]))
-
-            if (length(na_to_solve) > 0) {
-              nearby_ostia <- get_nearby(ostia_ds, "analysed_sst",
-                                      obis_dataset[na_to_solve, c("decimalLongitude", "decimalLatitude")],
-                                      mode = "25", depth = NULL,
-                                      date = paste(sel_year, sprintf("%02d", sel_month), "01", sep = "-"))
-              nearby_ostia$value <- nearby_ostia$value - 273.15
-
-              all_vals$ostiaSST[na_to_solve] <- nearby_ostia$value
-              all_vals$flag[na_to_solve[!is.na(nearby_ostia$value)]] <-
-                all_vals$flag[na_to_solve[!is.na(nearby_ostia$value)]] + 64
-            }
-
-            all_vals$ostiaProduct[!is.na(all_vals$ostiaSST)] <- ostia_prod
-
-            st$set(st_cod, c(st$get(st_cod), "ostia"))
-            log_df[log_df$year == sel_year & log_df$month == sel_month, "status_ostia"] <- "concluded"
-          } else {
-            st$set(st_cod, c(st$get(st_cod), "ostia"))
-            log_df[log_df$year == sel_year & log_df$month == sel_month, "status_ostia"] <- "failed_extract"
+          if (ostia_result$status == "succeeded") {
+            all_vals <- ostia_result$result
+            st$set(st_cod, c(st$get(st_cod), paste0("ostia_", part)))
           }
-          if (part == length(ds_parts)) fs::file_delete(ostia_ds)
+          rm(ostia_result)
+
+          if (part == total_parts) {
+            if (sum(grepl("ostia", st$get(st_cod))) == total_parts) {
+              log_df <- log_df |> set_success(sel_year, sel_month, "status_ostia")
+            } else {
+              log_df <- log_df |> set_failed(sel_year, sel_month, "status_ostia")
+            }
+            if (file.exists(ostia_ds)) fs::file_delete(ostia_ds)
+          }
         } else {
-          log_df[log_df$year == sel_year & log_df$month == sel_month, "status_ostia"] <- "unavailable"
+          log_df <- log_df |> set_unavailable(sel_year, sel_month, "status_ostia")
         }
 
         all_vals <- all_vals |> rename(obistherm_flags = flag)
@@ -579,29 +428,37 @@ for (yr in seq_along(range_year)) {
         all_vals <- all_vals[have_data, ]
 
         if (nrow(all_vals) > 0) {
-          if (length(ds_parts) > 1) {
-            write_parquet(all_vals, paste0(outfolder_final, "/", filename, "_year=", sel_year, "_month=", sel_month, "_part=", part, ".parquet"))
+          if (total_parts > 1) {
+            write_parquet(all_vals, 
+                          file.path(outfolder_final,
+                            paste0(filename, "_year=", sel_year, "_month=", sel_month, "_part=", part, ".parquet")))
           } else {
-            write_parquet(all_vals, paste0(outfolder_final, "/", filename, "_year=", sel_year, "_month=", sel_month, ".parquet"))
+            write_parquet(all_vals, 
+                          file.path(outfolder_final,
+                            paste0(filename, "_year=", sel_year, "_month=", sel_month, ".parquet")))
           }
         }
 
-        if (part == length(ds_parts)) {
+        if (part == total_parts) {
           st$set(st_cod, c(st$get(st_cod), "done"))
           log_df[log_df$year == sel_year & log_df$month == sel_month, "status_general"] <- "concluded"
         }
       }
     } else {
       if (st$exists(st_cod)) {
-        cat("Already done\n")
+        catn("Already done")
       } else {
         log_df[log_df$year == sel_year & log_df$month == sel_month, "status_general"] <- "skipped"
       }
     }
-    cat("Month log:\n")
+    catn("Month log:")
     print(log_df[log_df$year == sel_year & log_df$month == sel_month, ])
-    cat("========================\n\n")
+    catn("========================")
     st$set("log", log_df)
+  }
+
+  if (file.exists(file.path(outfolder, paste0("obisdata_year=", sel_year, ".parquet")))) {
+    fs::file_delete(file.path(outfolder, paste0("obisdata_year=", sel_year, ".parquet")))
   }
 }
 

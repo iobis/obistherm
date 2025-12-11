@@ -24,3 +24,7 @@ copernicus_password: NULL
 # If the number of points to process in a month is higher than this value,
 # the process will divide in batches of this size
 safe_limit_points: 4e6
+
+# Library to use for downloading files
+# Options are 'curl' or 'libcurl' (default is 'libcurl')
+download_library: curl
