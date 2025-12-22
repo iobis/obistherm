@@ -1,5 +1,21 @@
 reticulate::source_python("functions/sort_dimension.py")
 
+#' Get depths
+#'
+#' @param dataset xarray dataset
+#' @param target_data data.frame with data for which to extract
+#' @param sel_date the target date
+#' @param variable target variable
+#' @param verbose if `TRUE`, print progress messages
+#'
+#' @return depths
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' get_depths(ds, obis_ds, "2010-01-01")
+#' }
+#'
 get_depths <- function(dataset, target_data, sel_date, variable = "thetao", verbose = TRUE) {
 
     if (verbose) cat("Getting depths for", nrow(target_data), "points.\n")
