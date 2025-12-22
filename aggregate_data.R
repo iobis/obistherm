@@ -58,6 +58,8 @@ aggregate_data <- function(input_folder, output_folder,
     group_by(year) |>
     write_dataset(path = output_folder)
 
+  rm(ds)
+  
   cat("Converting to GeoArrow and adding H3\n")
 
   tf <- list.files(output_folder, recursive = T, full.names = T)
@@ -84,7 +86,7 @@ aggregate_data <- function(input_folder, output_folder,
     }
 
     tf_content |> write_parquet(tf[id])
-    rm(tf_content)
+    rm(tf_content, batches)
 
     proc_res <- process_file(tf[id])
 

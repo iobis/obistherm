@@ -1,6 +1,6 @@
 # OBIS - monthly temperature dataset
 
-This repository contains the code used to generate the **obistherm** dataset, which includes OBIS occurrence data matched with multiple sources of monthly temperature. Temperature data is extracted for each occurrence based on the date it was collected, at the recorded depth or across multiple depths. See how to download it [here](https://github.com/iobis/obis-therm#accessing-the-dataset) and how to use it [here](https://github.com/iobis/obis-therm#using-the-data).
+This repository contains the code used to generate the **obistherm** dataset, which includes OBIS occurrence data matched with multiple sources of monthly temperature. Temperature data is extracted for each occurrence based on the date it was collected, at the recorded depth or across multiple depths. See how to download it [here](https://github.com/iobis/obis-therm#accessing-the-dataset) and how to use it [here](https://github.com/iobis/obis-therm#using-the-data). You can find instructions on how to cite this dataset [here](https://github.com/iobis/obis-therm#data-license-and-citation).
 
 You can understand the dataset structure [here](https://github.com/iobis/obis-therm/blob/main/structure.md). The current version of **obistherm** is based on the [OBIS parquet export](https://obis.org/data/access/) of 2025-11-20 and covers the period of 1982 to 2025.
 
@@ -12,6 +12,13 @@ At this moment, the dataset include temperature information from four sources:
 - [Daily Global 5km Satellite Sea Surface Temperature (NOAA - CoralTemp)](https://coralreefwatch.noaa.gov/product/5km/index_5km_sst.php) - The NOAA Coral Reef Watch (CRW) daily global 5km Sea Surface Temperature (SST) product (CoralTemp), shows the nighttime ocean temperature measured at the surface (1986 onward). The product was developed from two related reanalysis (i.e. reprocessed) SST products and a near real-time SST product.
 - [Multi-Scale Ultra High Resolution Sea Surface Temperature (NASA - MUR-SST)](https://podaac.jpl.nasa.gov/dataset/MUR-JPL-L4-GLOB-v4.1) - MUR provides global SST data every day at a spatial resolution of 0.01 degrees in longitude-latitude coordinates, roughly at 1 km intervals (2002 onward). The MUR dataset is among the highest resolution SST analysis datasets currently available.
 - [Global Ocean OSTIA Sea Surface Temperature and Sea Ice Analysis](https://data.marine.copernicus.eu/product/SST_GLO_SST_L4_NRT_OBSERVATIONS_010_001/description) - The OSTIA global foundation Sea Surface Temperature product provides daily gap-free maps of Foundation Sea Surface Temperature at 0.05° grid resolution, using in-situ and satellite data from both infrared and microwave radiometers (2007 onward). The OSTIA system is run by the UK's Met Office and delivered by IFREMER PU. This is a L4 product. Recent data comes from the NRT (Near Real Time) version of the product, while older data comes from the Reprocessed version (see column `ostiaProduct`).
+
+## Data license and citation
+
+The OBIS dataset is built from source datasets that are licensed with CC0, CC BY, or CC BY-NC licenses. License and citation information for every source dataset is available at s3://obis-open-data/licenses.tsv. Although most of the underlying data are licensed with open CC0 and CC BY licenses, the full OBIS dataset is licensed under CC BY-NC and can be cited as follows:
+
+Ocean Biodiversity Information System (OBIS) (25 March 2025) OBIS Occurrence Data. Intergovernmental Oceanographic Commission of UNESCO. https://doi.org/10.25607/obis.occurrence.b89117cd.
+
 
 ## Codes
 

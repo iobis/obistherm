@@ -68,3 +68,5 @@ _columns.csv
 
 .venv/
 .vscode/
+
+*_stats.rds

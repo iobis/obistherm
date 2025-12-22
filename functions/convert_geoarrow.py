@@ -8,7 +8,6 @@ def process_file(path):
 
     Args:
         path: target Parquet file
-        h3_resolutions: list of H3 resolutions
 
     Returns:
         file saved
