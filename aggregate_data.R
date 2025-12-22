@@ -10,6 +10,10 @@ library(dplyr)
 library(reticulate)
 source("functions/utils.R")
 reticulate::source_python("functions/convert_geoarrow.py")
+settings <- yaml::read_yaml("settings.yml", readLines.warn = FALSE)
+input_folder <- settings$outfolder
+output_folder <- settings$outfolder_final
+fs::dir_create(output_folder)
 
 aggregate_data <- function(input_folder, output_folder,
                            h3_resolutions = c(7)) {
@@ -92,11 +96,6 @@ aggregate_data <- function(input_folder, output_folder,
   return(invisible(NULL))
   
 }
-
-# Settings
-input_folder <- "results/"
-output_folder <- "aggregated/"
-fs::dir_create(output_folder)
 
 # Aggregate
 aggregate_data(input_folder, output_folder)

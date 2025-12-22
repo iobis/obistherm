@@ -1,11 +1,19 @@
-# Clean up and refit
+######################### OBIS sea temperature dataset ########################
+# January of 2024
+# Author: Silas C. Principe
+# Contact: s.principe@unesco.org
+#
+############################## Check log data.frame ############################
+# Clean up log file (remove failed_extract/NA) for re-running get_temperatures.R
+
+# Settings
 library(storr)
 settings <- yaml::read_yaml("settings.yml", readLines.warn = FALSE)
 outfolder_final <- settings$outfolder_final
 filename <- "var=thetao"
-
 st <- storr_rds("control_storr")
 
+# Check log data.frame
 log_df <- st$get("log")
 
 which_failed <- apply(log_df, 1, \(x) {
@@ -13,6 +21,7 @@ which_failed <- apply(log_df, 1, \(x) {
 })
 which_failed <- which(which_failed)
 
+# Clean up
 cn <- colnames(log_df)[3:6]
 
 for (k in which_failed) {
@@ -47,3 +56,8 @@ for (i in na_entries) {
         fs::file_delete(outf)
     }
 }
+
+# Save log file
+st$set("log", log_df)
+
+### END

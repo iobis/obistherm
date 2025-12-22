@@ -1,3 +1,31 @@
+#' Retrieve data from the `obistherm` dataset using `DuckDB`
+#'
+#' @param datasource folder to the obistherm dataset
+#' @param scientificname species name
+#' @param taxonid taxonID
+#' @param family family
+#' @param year target year
+#' @param startyear minimum year
+#' @param endyear maximum year
+#' @param startdepth minimum depth
+#' @param enddepth maximum depth
+#' @param wkt geometry in well-known text format
+#' @param h3 vector of H3 index cells to return
+#' @param columns which columns to return
+#' @param return_query logical, if TRUE print the DuckDB query call
+#'
+#' @return filtered data
+#' @export
+#' 
+#' @details
+#' All parameters are optional, but you should supply at least one filter (e.g. scientific name)
+#' Not passing a `datasource` will read the dataset directly from the AWS bucket
+#'
+#' @examples
+#' \dontrun{
+#' ach <- retrieve_data(scientificname = "Acanthurus chirurgus", year = 2010)
+#' }
+#'
 retrieve_data <- function(datasource = NULL, scientificname = NULL, taxonid = NULL, family = NULL,
     year = NULL, startyear = NULL, endyear = NULL, startdepth = NULL, enddepth = NULL,
     wkt = NULL, h3 = NULL, columns = NULL, return_query = FALSE) {
@@ -6,7 +34,7 @@ retrieve_data <- function(datasource = NULL, scientificname = NULL, taxonid = NU
     require(duckdb)
 
     argg <- as.list(environment())
-    argg <- argg[which(names(argg) != "return_query")]
+    argg <- argg[which(!names(argg) %in% c("return_query", "datasource"))]
 
     if (all(is.null(unlist(argg)))) stop("At least one argument should be passed.")
 

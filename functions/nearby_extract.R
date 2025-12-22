@@ -1,4 +1,19 @@
-# Create a function to get nearby cell if the target is NA
+# deprecated, use nearby_from_nc.R
+#' Get nearby points based on the XY coordinates
+#'
+#' @param coords decimal longitude and decimal latitude (in this order)
+#' @param tlayer the SpatRaster
+#' @param mode queen for "queen mode" or any other value for a 5x5 matrix
+#' @param type to average values use "mean"
+#'
+#' @return nearby cells
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' get_nearby(c(-5, 6), my_rast, mode = "other")
+#' }
+#'
 get_nearby <- function(coords, tlayer, mode = "queen", type = "mean", ...) {
   if (nrow(coords) > 0) {
     tcell <- cellFromXY(tlayer, as.data.frame(coords))
@@ -37,7 +52,22 @@ get_nearby <- function(coords, tlayer, mode = "queen", type = "mean", ...) {
 }
 
 
-# Create a function to get nearby cell if the target is NA
+# deprecated, use nearby_from_nc.R
+#' Get nearby points based on the XY coordinates for multiple layers
+#'
+#' @param coords decimal longitude and decimal latitude (in this order)
+#' @param tlayer the SpatRaster
+#' @param mode queen for "queen mode" or any other value for a 5x5 matrix
+#' @param type to average values use "mean"
+#'
+#' @return nearby cells
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' get_nearby_mlayer(c(-5, 6), my_rast, mode = "other")
+#' }
+#'
 get_nearby_mlayer <- function(coords, tlayer, mode = "queen", type = "mean", layer) {
   if (nrow(coords) > 0) {
     tcell <- cellFromXY(tlayer, as.data.frame(coords))

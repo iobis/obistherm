@@ -1,5 +1,20 @@
 reticulate::source_python("functions/sort_dimension.py")
 
+#' Extract values from a netcdf
+#'
+#' @param netcdf netcdf path
+#' @param variable the target variable
+#' @param coordinates coordinates to be extracted
+#' @param depth optional, target depth
+#'
+#' @return what_return
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' extract_from_nc(nc_f, "thetao", coords)
+#' }
+#'
 extract_from_nc <- function(netcdf, variable, coordinates, depth = NULL) {
     if (!exists("xr")) {
         stop("Xarray is not loaded. Load it using `xr <- reticulate::import('xarray')`")
@@ -45,7 +60,24 @@ extract_from_nc <- function(netcdf, variable, coordinates, depth = NULL) {
     return(results_final)
 }
 
-
+#' Get nearby cells from a netcdf
+#'
+#' @param netcdf netcdf path
+#' @param variable the target variable
+#' @param coordinates coordinates to be extracted
+#' @param mmode queen for "queen mode" or any other value for a 5x5 matrix
+#' @param depth optional, target depth
+#' @param date optional, target date
+#' @param verbose logical, if TRUE print messages
+#'
+#' @return what_return
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' get_nearby(nc_f, "thetao", coords, mode = "other")
+#' }
+#'
 get_nearby <- function(netcdf, variable, coordinates, mode = "queen",
                        depth = NULL, date = NULL, verbose = TRUE) {
 

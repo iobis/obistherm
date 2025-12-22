@@ -47,6 +47,10 @@ options(timeout = 999999999)
 is_test <- ifelse(settings$mode == "test", TRUE, FALSE)
 safe_limit <- settings$safe_limit_points |> as.integer()
 download_lib <- settings$download_library
+stop_if_fail <- settings$stop_if_fail
+backup_noaa <- settings$backup_noaa_files
+backup_folder <- settings$backup_noaa_folder
+bypass_download <- settings$bypass_if_exists
 
 # Start Dask for parallel processing
 start_dask(browse = ifelse(interactive(), TRUE, FALSE))
@@ -59,6 +63,7 @@ fs::dir_create(outfolder_final)
 filename <- "var=thetao"
 coordnames <- c("decimalLongitude", "decimalLatitude")
 mur_info <- get_mur_ds()
+ctemp_info <- get_ctemp_ds()
 
 # Define range of dates to get information
 range_year <- 1982:lubridate::year(Sys.Date())
@@ -107,7 +112,7 @@ glorys1_max_date <- max(ds_sample$time$to_dataframe()[, 1])
 
 # Open OBIS dataset ------
 obis_ds <- get_obis(obis_source = settings$obis_source) |>
-  partition_by_year() |>
+  partition_by_year(skip = T) |>
   open_db()
 
 if (!st$exists("log")) {
@@ -255,20 +260,24 @@ for (yr in seq_along(range_year)) {
 
           if (part == 1) {
             catn("Downloading CoralTemp")
-            if (nrow(obis_dataset) <= 100) {
-              coraltemp_ds <- "https://coastwatch.pfeg.noaa.gov/erddap/griddap/NOAA_DHW_monthly"
-              proceed <- TRUE
-            } else {
-              df <- try(download.file(url = paste0(
-                "https://coastwatch.pfeg.noaa.gov/erddap/files/NOAA_DHW_monthly/ct5km_sst_ssta_monthly_v31_",
-                sel_year, sprintf("%02d", sel_month), ".nc"),
-                destfile = cttemp, method = download_lib, mode = "wb"), silent = T)
-              if (!inherits(df, "try-error")) {
+            coraltemp_ds <- bypass_try("coraltemp", backup_folder, sel_year, sel_month, bypass_download)
+            if (is.null(coraltemp_ds)) {
+              if (nrow(obis_dataset) <= 100) {
+                coraltemp_ds <- "https://coastwatch.pfeg.noaa.gov/erddap/griddap/NOAA_DHW_monthly"
                 proceed <- TRUE
-                coraltemp_ds <- cttemp
               } else {
-                proceed <- FALSE
+                df_ctemp <- safe_download_ctemp(sel_year = sel_year, sel_month = sel_month,
+                  destfile = cttemp, ctemp_info = ctemp_info, method = download_lib, mode = "wb")
+                if (!inherits(df_ctemp, "try-error")) {
+                  proceed <- TRUE
+                  coraltemp_ds <- cttemp
+                } else {
+                  proceed <- FALSE
+                  if (stop_if_fail) stop("CoralTemp failed.")
+                }
               }
+            } else {
+              proceed <- TRUE
             }
           }
 
@@ -290,7 +299,10 @@ for (yr in seq_along(range_year)) {
             } else {
               log_df <- log_df |> set_failed(sel_year, sel_month, "status_coraltemp")
             }
-            if (file.exists(cttemp)) fs::file_delete(cttemp)
+            if (file.exists(cttemp)) {
+              backup_it(cttemp, "coraltemp", sel_year, sel_month, backup_folder, backup_noaa) |> 
+                fs::file_delete()
+            }
           }
         } else {
           log_df <- log_df |> set_unavailable(sel_year, sel_month, "status_coraltemp")
@@ -303,18 +315,24 @@ for (yr in seq_along(range_year)) {
 
           if (part == 1) {
             catn("Downloading MUR")
-            if (nrow(obis_dataset) <= 100) {
-              mur_ds <- "https://coastwatch.pfeg.noaa.gov/erddap/griddap/jplMURSST41mday"
-              proceed <- TRUE
-            } else {
-              df_mur <- safe_download_mur(sel_year = sel_year, sel_month = sel_month,
-                destfile = murtemp, mur_info = mur_info, method = download_lib, mode = "wb")
-              if (!inherits(df_mur, "try-error")) {
+            mur_ds <- bypass_try("mur", backup_folder, sel_year, sel_month, bypass_download)
+            if (is.null(mur_ds)) {
+              if (nrow(obis_dataset) <= 100) {
+                mur_ds <- "https://coastwatch.pfeg.noaa.gov/erddap/griddap/jplMURSST41mday"
                 proceed <- TRUE
-                mur_ds <- murtemp
               } else {
-                proceed <- FALSE
+                df_mur <- safe_download_mur(sel_year = sel_year, sel_month = sel_month,
+                  destfile = murtemp, mur_info = mur_info, method = download_lib, mode = "wb")
+                if (!inherits(df_mur, "try-error")) {
+                  proceed <- TRUE
+                  mur_ds <- murtemp
+                } else {
+                  proceed <- FALSE
+                  if (stop_if_fail) stop("MUR failed.")
+                }
               }
+            } else {
+              proceed <- TRUE
             }
           }
 
@@ -336,7 +354,10 @@ for (yr in seq_along(range_year)) {
             } else {
               log_df <- log_df |> set_failed(sel_year, sel_month, "status_mur")
             }
-            if (file.exists(murtemp)) fs::file_delete(murtemp)
+            if (file.exists(murtemp)) {
+              backup_it(murtemp, "mur", sel_year, sel_month, backup_folder, backup_noaa) |>
+                fs::file_delete()
+            }
           }
         } else {
           log_df <- log_df |> set_unavailable(sel_year, sel_month, "status_mur")

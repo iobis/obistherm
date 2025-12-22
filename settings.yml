@@ -28,3 +28,9 @@ safe_limit_points: 4e6
 # Library to use for downloading files
 # Options are 'curl' or 'libcurl' (default is 'libcurl')
 download_library: curl
+
+# NOAA ERDDAP server settings
+backup_noaa_files: true
+backup_noaa_folder: '/Volumes/OBIS2/sst_files'
+bypass_if_exists: true
+stop_if_fail: true

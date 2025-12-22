@@ -1,3 +1,16 @@
+#' Get samples of satellite data
+#'
+#' @param .usr Copernicus user
+#' @param .pwd Copernicus password
+#'
+#' @return saved files on "samples"
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' get_samples(usr, pwd)
+#' }
+#'
 get_samples <- function(.usr, .pwd) {
 
     fs::dir_create("samples")

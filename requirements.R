@@ -19,8 +19,7 @@ req_packages <- c(
   "fs",
   "httr",
   "storr",
-  "progress",
-  "httr"
+  "progress"
 )
 
 # Create a function to check if is installed

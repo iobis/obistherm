@@ -1,4 +1,18 @@
-# Create a function to get nearby cell XY coords if the target is NA
+# deprecated, use nearby_from_nc.R
+#' Get nearby points based on the XY coordinates
+#'
+#' @param coords decimal longitude and decimal latitude (in this order)
+#' @param tlayer the SpatRaster
+#' @param mode queen for "queen mode" or any other value for a 5x5 matrix
+#'
+#' @return nearby cells
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' get_nearby_xy(c(-5, 6), my_rast, mode = "other")
+#' }
+#'
 get_nearby_xy <- function(coords, tlayer, mode = "queen") {
   if (nrow(coords) > 0) {
     tcell <- cellFromXY(tlayer, as.data.frame(coords))

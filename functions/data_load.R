@@ -1,3 +1,18 @@
+#' Load data for a year
+#'
+#' @param sel_year target year
+#' @param obis_filt path to the the filtered dataset (by year)
+#' @param outfolder if not NULL, an intermediate file will be saved (recommended), 
+#' otherwise will keep it in memory.
+#'
+#' @return data.frame in memory or open Arrow dataset
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' load_data_year(2010, "obis_ds", "temp")
+#' }
+#'
 load_data_year <- function(sel_year, obis_filt, outfolder = NULL) {
 
     obis_sel <- dbGetQuery(obis_filt,
@@ -28,6 +43,19 @@ load_data_year <- function(sel_year, obis_filt, outfolder = NULL) {
     return(obis_sel)
 }
 
+#' Filter data for a month
+#'
+#' @param obis_sel data.frame or Arrow dataset
+#' @param sel_month target month
+#'
+#' @return filtered data
+#' @export
+#' 
+#' @examples
+#' \dontrun{
+#' filter_data_month(obis_df, 1)
+#' }
+#'
 filter_data_month <- function(obis_sel, sel_month) {
     
     if (nrow(obis_sel) > 0) {

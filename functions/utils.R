@@ -353,19 +353,20 @@ get_mur_ds <- function() {
     read.csv(tf)
 }
 
-#' title
+#' Safely download MUR data
 #'
-#' @param name what
+#' @param sel_year year
+#' @param sel_month month
+#' @param destfile destination file
+#' @param mur_info data.frame containing details, as returned by [get_mur_ds()]
+#' @param ... additional parameter passed to [download.file()]
 #'
-#' @return what_return
+#' @return downloaded file
 #' @export
-#' 
-#' @details
-#' details
 #'
 #' @examples
 #' \dontrun{
-#' example
+#' safe_download_mur(2010, 10, "tempmur.nc", mur_info)
 #' }
 #'
 safe_download_mur <- function(sel_year, sel_month, destfile, mur_info, ...) {
@@ -411,6 +412,135 @@ safe_download_mur <- function(sel_year, sel_month, destfile, mur_info, ...) {
     }
     if (!downloaded) message("Problem when downloading file for MUR")
     return(td)
+}
+
+
+#' Get CoralTemp dataset list (files and sizes)
+#'
+#' @return a data.frame
+#' @export
+#' 
+#' @details
+#' All CoralTemp files and sizes according to https://coastwatch.pfeg.noaa.gov/erddap/files/NOAA_DHW_monthly/
+#'
+#' @examples
+#' \dontrun{
+#' ctemp_files <- get_ctemp_ds()
+#' }
+#'
+get_ctemp_ds <- function() {
+    tf <- tempfile(fileext = ".csv")
+    download.file("https://coastwatch.pfeg.noaa.gov/erddap/files/NOAA_DHW_monthly/.csv", tf)
+    read.csv(tf)
+}
+
+#' Safely download CoralTemp data
+#'
+#' @param sel_year year
+#' @param sel_month month
+#' @param destfile destination file
+#' @param ctemp_info data.frame containing details, as returned by [get_ctemp_ds()]
+#' @param ... additional parameter passed to [download.file()]
+#'
+#' @return downloaded file
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' safe_download_ctemp(2010, 10, "tempctemp.nc", ctemp_info)
+#' }
+#'
+safe_download_ctemp <- function(sel_year, sel_month, destfile, ctemp_info, ...) {
+
+    url <- paste0(
+        "https://coastwatch.pfeg.noaa.gov/erddap/files/NOAA_DHW_monthly/ct5km_sst_ssta_monthly_v31_",
+        sel_year, sprintf("%02d", sel_month), ".nc"
+    )
+
+    target_size <- ctemp_info[ctemp_info$Name == basename(url), "Size"]
+    if (is.null(target_size) || length(target_size) < 1) target_size <- 18*1000*1000
+    td <- try(download.file(url, destfile, ...), silent = T)
+    if (inherits(td, "try-error")) {
+        fsiz <- 0
+    } else {
+        fsiz <- file.size(destfile)
+    }
+    if (fsiz < target_size) {
+        message("Download failed. Retrying...")
+        max_retry <- 2
+        downloaded <- FALSE
+        tried <- 0
+        while (!downloaded & tried < max_retry) {
+            tried <- tried + 1
+            td <- try(download.file(url, destfile, ...), silent = T)
+            if (!inherits(td, "try-error")) {
+                fsiz <- file.size(destfile)
+                if (fsiz >= target_size) downloaded <- TRUE
+            }
+        }
+    } else {
+        downloaded <- TRUE
+    }
+    if (!downloaded) message("Problem when downloading file for CoralTemp")
+    return(td)
+}
+
+#' Backup files
+#'
+#' @param file file to backup
+#' @param what name of the product
+#' @param file file to backup
+#' @param fyear year of the product
+#' @param fmonth month of the product
+#' @param backup_folder the folder to save files
+#' @param backup logical, if TRUE do the backup
+#'
+#' @return the file name
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' backup_it("cttemp.nc", "coraltemp", 2020, 1, "backup")
+#' }
+#'
+backup_it <- function(file, what, fyear, fmonth, backup_folder, backup = TRUE) {
+  if (backup) {
+    fs::file_copy(
+        file,
+        file.path(backup_folder, paste0(what, "_", fyear, "_", fmonth, ".nc"))
+    )
+  }
+  return(file)
+}
+
+#' Bypass download
+#'
+#' @param what name of the product
+#' @param folder folder where files are
+#' @param fyear year of the product
+#' @param fmonth month of the product
+#'
+#' @return the file name or NULL if file does not exists
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' bypass_try("coraltemp", "backup", 2020, 1)
+#' }
+#'
+bypass_try <- function(what, folder, fyear, fmonth, bypass = FALSE) {
+    if (bypass) {
+        tf <- file.path(folder, paste0(what, "_", fyear, "_", fmonth, ".nc"))
+        if (file.exists(tf)) {
+            cat("Bypassing download for file", tf, "\n")
+            return(tf)
+        } else {
+            cat("Bypass: file", tf, "not found, proceeding with download.\n")
+            return(NULL)
+        }
+    } else {
+        return(NULL)
+    }
 }
 
 #' Set log file status
