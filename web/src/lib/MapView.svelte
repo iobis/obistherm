@@ -235,8 +235,8 @@
     map = new maplibregl.Map({
       container,
       style:     BASEMAP_STYLE,
-      center:    [0, 20],
-      zoom:      2,
+      center:    [-70, 15],
+      zoom:      3,
       antialias: true,
     } as any);
     map.addControl(new maplibregl.NavigationControl(), 'top-right');
