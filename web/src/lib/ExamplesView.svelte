@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { asset } from '$app/paths';
   import { db, runQuery, registerParquet } from '$lib/db.svelte';
   import * as Plot from '@observablehq/plot';
 
@@ -164,7 +165,7 @@ GROUP BY h3_5`,
       const filename = `${id}.parquet`;
 
       if (!parquetLoaded[id]) {
-        await registerParquet(filename, `/${filename}`);
+        await registerParquet(filename, asset(`/${filename}`));
         parquetLoaded[id] = true;
 
         const countRows = await runQuery(`SELECT COUNT(*) AS n FROM read_parquet('${filename}')`);
