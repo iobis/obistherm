@@ -70,3 +70,7 @@ _columns.csv
 .vscode/
 
 *_stats.rds
+
+.claude/
+web/.svelte-kit/
+web/node_modules/
