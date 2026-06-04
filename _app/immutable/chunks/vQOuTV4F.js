@@ -1,0 +1,1 @@
+import{J as e}from"./BUmee-Rw.js";e();
