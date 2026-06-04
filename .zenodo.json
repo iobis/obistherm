@@ -1,0 +1,64 @@
+{
+    "title": "obistherm - OBIS occurrence data matched with monthly sea temperature",
+    "upload_type": "dataset",
+    "description": "obistherm is a dataset that links marine species occurrence records from OBIS with sea surface temperature (SST) data from four satellite products: GLORYS, CoralTemp, MUR, and OSTIA. Each occurrence record is matched to the temperature value at its location and date.",
+    "creators": [
+        {
+            "name": "Principe, Silas",
+            "orcid": "0000-0002-8059-6304",
+            "affiliation": "Ocean Biodiversity Information System, International Oceanographic Data and Information Exchange, Intergovernmental Oceanographic Commission, UNESCO"
+        },
+        {
+            "name": "Provoost, Pieter",
+            "orcid": "0000-0002-4236-0384",
+            "affiliation": "Ocean Biodiversity Information System, International Oceanographic Data and Information Exchange, Intergovernmental Oceanographic Commission, UNESCO"
+        }
+    ],
+    "contributors": [
+        {
+            "name": "Ocean Biodiversity Information System",
+            "type": "Producer"
+        },
+        {
+            "name": "International Oceanographic Data and Information Exchange",
+            "type": "HostingInstitution"
+        },
+        {
+            "name": "Intergovernmental Oceanographic Commission of UNESCO",
+            "type": "RightsHolder"
+        }
+    ],
+    "license": "CC-BY-4.0",
+    "keywords": [
+        "sea temperature",
+        "satellite",
+        "GeoParquet",
+        "marine biodiversity",
+        "OBIS",
+        "ocean biodiversity"
+    ],
+    "related_identifiers": [
+        {
+            "identifier": "https://github.com/iobis/obistherm",
+            "relation": "isSupplementTo",
+            "resource_type": "dataset",
+            "scheme": "url"
+        },
+        {
+            "identifier": "10.14284/170",
+            "relation": "isDerivedFrom",
+            "resource_type": "dataset",
+            "scheme": "doi"
+        },
+        {
+            "identifier": "s3://obis-products/obistherm",
+            "relation": "isSupplementTo",
+            "resource_type": "dataset",
+            "scheme": "url"
+        }
+    ],
+    "references": [
+        "OBIS (25 October 2023) OBIS Occurrence Snapshot. Ocean Biodiversity Information System. Intergovernmental Oceanographic Commission of UNESCO. https://obis.org.",
+        "World Register of Marine Species. Available from https://www.marinespecies.org at VLIZ. Accessed 2024-05-01. doi:10.14284/170."
+    ]
+}

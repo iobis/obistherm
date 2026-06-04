@@ -8,6 +8,7 @@
   import { MapboxOverlay } from '@deck.gl/mapbox';
   import { H3HexagonLayer } from '@deck.gl/geo-layers';
   import { GeoJsonLayer } from '@deck.gl/layers';
+  import { cellToLatLng } from 'h3-js';
 
   let {
     rows        = [] as CellRow[],
@@ -85,9 +86,25 @@
     return Number.isFinite(min) ? { min, max } : { min: 0, max: 1 };
   });
 
-  // ── Auto-zoom via bbox prop ────────────────────────────────────────────────
-  // bbox is computed by the page using ST_Extent(geometry) in DuckDB,
-  // so all spatial knowledge stays in SQL — MapView just calls fitBounds.
+  // ── Auto-zoom: fit map to H3 cell centres whenever rows change ───────────
+  $effect(() => {
+    if (!rows.length || !map) return;
+    let minLng = Infinity, maxLng = -Infinity, minLat = Infinity, maxLat = -Infinity;
+    for (const r of rows) {
+      try {
+        const [lat, lng] = cellToLatLng(r.cell);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+        if (lng < minLng) minLng = lng;
+        if (lng > maxLng) maxLng = lng;
+        if (lat < minLat) minLat = lat;
+        if (lat > maxLat) maxLat = lat;
+      } catch { /* skip invalid cells */ }
+    }
+    if (!Number.isFinite(minLng)) return;
+    map.fitBounds([[minLng, minLat], [maxLng, maxLat]], { padding: 60, maxZoom: 8, duration: 700 });
+  });
+
+  // ── Manual bbox override (e.g. from WKT outline) ─────────────────────────
   $effect(() => {
     if (bbox && map) {
       map.fitBounds(bbox, { padding: 60, maxZoom: 10, duration: 700 });

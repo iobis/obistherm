@@ -1,12 +1,12 @@
 cff-version: 1.2.0
 message: If you use this work, please cite it as below.
-title: OBIS Thermal Dataset
+title: obistherm - OBIS occurrence data matched with monthly sea temperature
 type: dataset
-abstract: Sea temperature matched to occurrence records
+abstract: obistherm is a dataset that links marine species occurrence records from OBIS with sea surface temperature (SST) data from four satellite products: GLORYS, CoralTemp, MUR, and OSTIA. Each occurrence record is matched to the temperature value at its location and date.
 url: https://github.com/iobis/obistherm
 license: CC-BY-IGO-4.0
 authors:
-  - family-names: silasprincipe
+  - family-names: Principe, Silas
     orcid: "https://orcid.org/0000-0002-8059-6304"
   - name: Intergovernmental Oceanographic Commission of UNESCO
     alias: IOC-UNESCO
