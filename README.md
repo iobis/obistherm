@@ -1,8 +1,11 @@
-# OBIS - monthly temperature dataset
+# `obistherm` - OBIS occurrence data matched with monthly sea temperature <img src="images/obistherm-logo.png" width="160px" align="right" />
 
-[![DOI](https://zenodo.org/badge/841961835.svg)](https://doi.org/10.5281/zenodo.18024478)
+<!-- [![DOI](https://zenodo.org/badge/841961835.svg)](https://doi.org/10.5281/zenodo.18024478) -->
+[![DOI](https://img.shields.io/badge/DOI-10.5281/zenodo.18024478-blue)](https://doi.org/10.5281/zenodo.18024478)
+[![Products catalogue](https://raw.githubusercontent.com/iobis/badges/refs/heads/main/badges/obis-products_catalogue.svg)](https://products.obis.org/dataset/10-5281-zenodo-18024478)
+[![IOC](https://raw.githubusercontent.com/iobis/badges/refs/heads/main/badges/ioc-hlo3_resilience_to_climate_change.svg)](https://www.ioc.unesco.org/en/mission-and-objectives)
 
-This repository contains the code used to generate the **obistherm** dataset, which includes OBIS occurrence data matched with multiple sources of monthly temperature. Temperature data is extracted for each occurrence based on the date it was collected, at the recorded depth or across multiple depths. See how to download it [here](https://github.com/iobis/obis-therm#accessing-the-dataset) and how to use it [here](https://github.com/iobis/obis-therm#using-the-data). You can find instructions on how to cite this dataset [here](https://github.com/iobis/obis-therm#data-license-and-citation).
+`obistherm` is a dataset that links marine species occurrence records from OBIS with sea surface temperature (SST) data from four satellite products: GLORYS, CoralTemp, MUR, and OSTIA. Each occurrence record is matched to the temperature value at its location and date (at monthly resolution), at the recorded depth or across multiple depths. See how to download it [here](https://github.com/iobis/obis-therm#accessing-the-dataset) and how to use it [here](https://github.com/iobis/obis-therm#using-the-data). You can find instructions on how to cite this dataset [here](https://github.com/iobis/obis-therm#data-license-and-citation).
 
 You can understand the dataset structure [here](https://github.com/iobis/obis-therm/blob/main/structure.md). The current version of **obistherm** is based on the [OBIS parquet export](https://obis.org/data/access/) of 2025-11-20 and covers the period of 1982 to 2025.
 
