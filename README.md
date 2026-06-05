@@ -1,4 +1,4 @@
-# <img src="images/obistherm-logo.png" width="160px" align="right" /> `obistherm` - OBIS occurrence data matched with monthly sea temperature
+# <img src="images/obistherm-logo.jpg" width="160px" align="right" /> `obistherm` - OBIS occurrence data matched with monthly sea temperature
 
 <!-- [![DOI](https://zenodo.org/badge/841961835.svg)](https://doi.org/10.5281/zenodo.18024478) -->
 [![DOI](https://img.shields.io/badge/DOI-10.5281/zenodo.18024478-blue)](https://doi.org/10.5281/zenodo.18024478)
