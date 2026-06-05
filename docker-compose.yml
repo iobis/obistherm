@@ -1,0 +1,27 @@
+services:
+  obistherm:
+    build: .
+    image: obistherm:latest
+    volumes:
+      # OBIS raw data (synced from S3 at runtime)
+      - ${DATA_ROOT}/obis_data:/data/obis_data
+      # Partitioned OBIS data (hive format by year; created once, reused)
+      - ${DATA_ROOT}/obis_partitioned:/data/obis_partitioned
+      # Per-month temperature results
+      - ${DATA_ROOT}/results_partial:/data/results_partial
+      # Final aggregated dataset (read-only reference for incremental updates)
+      - ${DATA_ROOT}/results_final:/data/results_final
+      # Cached NOAA SST files (optional, avoids re-downloading)
+      - ${DATA_ROOT}/sst_files:/data/sst_files
+      # Storr state: tracks which months are done across runs
+      - ${DATA_ROOT}/control_storr:/app/control_storr
+      # Log files
+      - ${DATA_ROOT}/logs:/app/logs
+    environment:
+      COPERNICUS_USER: ${COPERNICUS_USER}
+      COPERNICUS_PWD: ${COPERNICUS_PWD}
+      # Number of full pipeline passes before giving up
+      MAX_RETRIES: ${MAX_RETRIES:-3}
+      # Seconds to wait between retries (downloads may need time to recover)
+      RETRY_DELAY: ${RETRY_DELAY:-300}
+    restart: "no"

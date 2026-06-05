@@ -73,3 +73,6 @@ web/.svelte-kit/
 web/node_modules/
 
 TODOS
+
+# Docker
+.env

@@ -1,0 +1,34 @@
+# Docker-specific settings for obistherm
+# Paths here correspond to container mount points defined in docker-compose.yml
+mode: production
+
+# Working folders (container paths)
+outfolder: temp
+outfolder_final: /data/results_partial
+outfolder_aggregated: /data/results_final
+
+# Source for OBIS data (synced from s3://obis-open-data/occurrence/)
+obis_source: /data/obis_data
+
+# Copernicus credentials - leave NULL to use COPERNICUS_USER / COPERNICUS_PWD env vars
+copernicus_user: NULL
+copernicus_password: NULL
+
+# Safety limit: batches larger datasets to stay within memory
+safe_limit_points: 4e6
+
+# Download library
+download_library: curl
+
+# NOAA ERDDAP backup settings
+backup_noaa_files: true
+backup_noaa_folder: /data/sst_files
+bypass_if_exists: true
+
+# Keep false so a single download failure does not abort the run;
+# the entrypoint retry loop handles re-processing failed months.
+stop_if_fail: false
+
+# Update settings
+cleanup_storr: true
+check_invalids: true

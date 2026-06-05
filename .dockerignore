@@ -1,0 +1,39 @@
+.git/
+.Rproj.user/
+.DS_Store
+.Renviron
+.Rhistory
+.RData
+
+# Runtime-generated, mounted as volumes
+control_storr/
+OLDcontrol_storr/
+OLD2control_storr/
+temp/
+logs/
+data/
+aggregated/
+results/
+samples/
+
+# Not needed in image
+drafts/
+images/
+notebooks/
+web/
+.venv/
+__pycache__/
+
+# Host-side data files
+*.rds
+_void-ids.rds
+
+# Other scripts not used in the container
+get_temperatures.R
+aggregate_data.R
+setup.R
+requirements.R
+_upload.R
+pseudocode.md
+structure.md
+README.md
