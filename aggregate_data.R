@@ -71,7 +71,7 @@ aggregate_data <- function(input_folder, output_folder,
 
     tf_content <- read_parquet(tf[id])
 
-    tf_content |>
+    tf_content <- tf_content |>
       mutate(obistherm_flags = decode_flag(obistherm_flags))
     
     for (hr in h3_resolutions) {

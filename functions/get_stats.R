@@ -67,4 +67,10 @@ get_ds_stats <- function(final_folder, save_rds = TRUE) {
     return(ret_obj)
 }
 
-ds_stats <- get_ds_stats()
+settings <- yaml::read_yaml("settings.yml", readLines.warn = FALSE)
+
+final_folder <- settings$outfolder_final
+
+ds_stats <- get_ds_stats(final_folder)
+ds_stats$total
+ds_stats$phylum[order(ds_stats$phylum$total, decreasing = T),]

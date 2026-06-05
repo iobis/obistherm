@@ -30,7 +30,7 @@ is_package_installed <- function(pkg) {
 # Check which ones are not installed and install if needed:
 for (i in seq_along(req_packages)) {
   if (!is_package_installed(req_packages[i])) {
-    install.packages(req_packages[i])
+    install.packages(req_packages[i], repos = "https://cloud.r-project.org/")
   }
 }
 # Install Python packages
@@ -41,5 +41,7 @@ reticulate::py_install(envname = "./.venv", c(
   "dask[distributed]",
   "bokeh>=3.1.0",
   "geopandas",
-  "pyarrow"
+  "pyarrow",
+  "h5py",
+  "netCDF4"
 ), pip = TRUE)

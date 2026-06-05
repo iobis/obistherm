@@ -66,10 +66,10 @@ The dataset is structured as this:
 |murSST                        |double       |MUR sea surface temperature                                                              |
 |ostiaSST                      |double       |OSTIA sea surface temperature                                                            |
 |ostiaProduct                  |string       |Which OSTIA product was used. REP = reprocessed, NRT = near real time                    |
-|obistherm_flags               |double       |obistherm flags                                                                          |
+|obistherm_flags               |string       |obistherm flags                                                                          |
 |h3_7                          |string       |H3 grid cell at resolution 7                                                             |
 |geometry                      |binary       |Geometry in WKB format                                                                   |
-|year                          |int32        |Year (read from the dataset structure)                                                   | 
+|year                          |int32        |Year (read from the dataset structure)                                                   |
 
 The columns `_id` and `dataset_id` enable you to link and join this dataset with the OBIS database.
 

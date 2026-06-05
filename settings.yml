@@ -7,7 +7,9 @@ mode: production
 # Folder to store temporary files
 outfolder: temp
 # Folder to store final results
-outfolder_final: results
+outfolder_final: '/Volumes/OBIS2/results_partial'
+# Folder to store aggregated results
+outfolder_aggregated: '/Volumes/OBIS2/results_final'
 
 # Source for OBIS data
 # leave as NULL to download from OBIS open data (https://github.com/iobis/obis-open-data)
@@ -34,3 +36,7 @@ backup_noaa_files: true
 backup_noaa_folder: '/Volumes/OBIS2/sst_files'
 bypass_if_exists: true
 stop_if_fail: true
+
+# Update
+cleanup_storr: true
+check_invalids: true

@@ -93,16 +93,17 @@ get_obis <- function(obis_source = NULL) {
 #'
 partition_by_year <- function(obis_source, min_year = 1982, skip = FALSE) {
 
-    message("Partitioning dataset by year")
     require(duckdb)
 
     f <- dirname(obis_source) |>
         file.path("obis_partitioned")
-    
+
     if (skip) {
         message("Skipping data preparing and using old version at ", f)
         return(f)
     }
+
+    message("Partitioning dataset by year")
 
     if (dir.exists(f)) {
         message("Cleaning folder...")
@@ -124,7 +125,7 @@ partition_by_year <- function(obis_source, min_year = 1982, skip = FALSE) {
             interpreted.coordinatePrecision as coordinatePrecision, interpreted.coordinateUncertaintyInMeters as coordinateUncertaintyInMeters,
             interpreted.minimumDepthInMeters as minimumDepthInMeters, interpreted.maximumDepthInMeters as maximumDepthInMeters,
             dropped, absence, flags
-        FROM read_parquet('/Volumes/OBIS2/data/obis_data/*')
+        FROM read_parquet('/Volumes/OBIS2/data/obis_data/*.parquet')
         WHERE dropped IS NOT TRUE AND date_year >= ", min_year, "
     ) TO '/Volumes/OBIS2/data/obis_partitioned'
     (FORMAT parquet, PARTITION_BY (date_year));
@@ -157,7 +158,7 @@ open_db <- function(source_folder) {
 
     DBI::dbSendQuery(con, paste0(
     "
-    CREATE VIEW obis AS SELECT * FROM read_parquet('", file.path(source_folder, "*/*"), "');
+    CREATE VIEW obis AS SELECT * FROM read_parquet('", file.path(source_folder, "*/*.parquet"), "');
     "
     ))
 
@@ -601,4 +602,57 @@ catn <- function(...) {
 #' @export
 catg <- function(...) {
     cat("\033[42m", ..., "\033[49m\n")
+}
+
+#' Add invalid occurrence IDs to an RDS file
+#'
+#' @param invalid_ids a vector of invalid occurrence IDs
+#' @param sel_year selected year
+#' @param sel_month selected month
+#' @param rds_path path to save the RDS file
+#'
+#' @return what_return
+#' @export
+#' 
+#' @details
+#' Some occurrences are not matched with temperature (e.g. fall on land). In those cases
+#' we record the occurrence IDs, so that when updating the dataset it skips those IDs.
+#' When a dataset is updated on OBIS, any changes on the record will give it a new ID.
+#' Thus, using this method will not affect getting temperature for records that were
+#' eventually updated in terms of their coordinates.
+#' 
+#' The RDS file is structured as a list, with each combination sel_year + sel_month
+#' containing the invalid IDs. E.g.
+#' `rds_results[["year=2010_month=10"]]`
+#'
+#' @examples
+#' \dontrun{
+#' add_invalid_ids(void_ids, sel_year, sel_month)
+#' }
+#'
+add_invalid_ids <- function(invalid_ids, sel_year, sel_month, rds_path = "_void-ids.rds") {
+    ymcomb <- paste0("year=", sel_year, "_month=", sel_month)
+
+    if (!file.exists(rds_path)) {
+        message("RDS file not available, creating and adding...")
+        rds_list <- list(invalid_ids)
+        names(rds_list) <- ymcomb
+        saveRDS(rds_list, file = rds_path)
+    } else {
+        message("Adding invalid _id's to RDS file")
+        existent <- readRDS(rds_path)
+
+        if (is.null(existent[[ymcomb]])) {
+            existent[[ymcomb]] <- invalid_ids
+        } else {
+            existent[[ymcomb]] <- c(
+                existent[[ymcomb]], invalid_ids
+            )
+            existent[[ymcomb]] <- existent[[ymcomb]][!duplicated(existent[[ymcomb]])]
+        }
+
+        saveRDS(existent, file = rds_path)
+    }
+
+    return(invisible(NULL))
 }

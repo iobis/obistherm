@@ -3,7 +3,8 @@
 # Author: Silas C. Principe
 # Contact: s.principe@unesco.org
 #
-################################# Data download ################################
+############################# Update temperatures ##############################
+# This code is to be used once the main dataset is made, to add additional months
 
 # Flags
 # 0 = no problem
@@ -31,6 +32,7 @@ source("functions/nearby_from_nc.R")
 source("functions/dates.R")
 source("functions/download_data.R")
 source("functions/utils.R")
+source("functions/update_utils.R")
 source("functions/get_depths.R")
 source("functions/data_load.R")
 source("functions/process_functions.R")
@@ -51,10 +53,12 @@ stop_if_fail <- settings$stop_if_fail
 backup_noaa <- settings$backup_noaa_files
 backup_folder <- settings$backup_noaa_folder
 bypass_download <- settings$bypass_if_exists
+check_invalids <- settings$check_invalids
 
 # Start Dask for parallel processing
 start_dask(browse = ifelse(interactive(), TRUE, FALSE))
 
+if (dir.exists("control_storr") & settings$check_invalids) fs::dir_delete("control_storr")
 st <- storr_rds("control_storr")
 outfolder <- settings$outfolder
 outfolder_final <- settings$outfolder_final
@@ -112,8 +116,9 @@ glorys1_max_date <- max(ds_sample$time$to_dataframe()[, 1])
 
 # Open OBIS dataset ------
 obis_ds <- get_obis(obis_source = settings$obis_source) |>
-  partition_by_year(skip = FALSE) |>
-  open_db()
+  partition_by_year(skip = T) |>
+  open_db() |>
+  open_done(settings$outfolder_aggregated)
 
 if (!st$exists("log")) {
   log_df <- data.frame(
@@ -147,10 +152,6 @@ for (yr in seq_along(range_year)) {
     next
   }
 
-  # Load data for a specific year and month
-  obis_sel <- load_data_year(sel_year, obis_ds, outfolder)
-  catn(nrow(obis_sel), "total points for this year.")
-
   for (mo in seq_along(range_month)) {
     # Get log file
     log_df <- st$get("log")
@@ -165,7 +166,11 @@ for (yr in seq_along(range_year)) {
     }
 
     # Load data for month
-    obis_sel_month_total <- filter_data_month(obis_sel, sel_month)
+    obis_sel_month_total <- previous_done(obis_ds, sel_year, sel_month)
+    cleanup_repeated(settings$outfolder_final, sel_year, sel_month, obis_sel_month_total$`_id`)
+
+    if (check_invalids) obis_sel_month_total <- invalid_ids(obis_sel_month_total)
+
     catn(nrow(obis_sel_month_total), "total points for this month.")
 
     if (nrow(obis_sel_month_total) > 0 && !st$exists(st_cod)) {
@@ -446,22 +451,43 @@ for (yr in seq_along(range_year)) {
           1, function(x) any(!is.na(x))
         )
 
-        void_ids <- all_vals$`_id`[!have_data]
-        add_invalid_ids(void_ids, sel_year, sel_month)
-        rm(void_ids)
+        if (check_invalids) {
+            add_invalid_ids(all_vals[!have_data,])
+        }
 
         all_vals <- all_vals[have_data, ]
 
         if (nrow(all_vals) > 0) {
-          if (total_parts > 1) {
-            write_parquet(all_vals, 
-                          file.path(outfolder_final,
-                            paste0(filename, "_year=", sel_year, "_month=", sel_month, "_part=", part, ".parquet")))
-          } else {
-            write_parquet(all_vals, 
-                          file.path(outfolder_final,
-                            paste0(filename, "_year=", sel_year, "_month=", sel_month, ".parquet")))
-          }
+            previous_file <- list.files(outfolder_final)
+            previous_file <- previous_file[grepl(
+                paste0(
+                    paste0("year=", sel_year, "_month=", sel_month, ".parquet"), "|",
+                    paste0("year=", sel_year, "_month=", sel_month, "_part")
+                ),
+                previous_file
+            )]
+            if (length(previous_file) > 1) {
+                parts <- gsub("^.*._part=", "", gsub("\\.parquet", "", previous_file)) |> length()
+            } else if (length(previous_file) == 1) {
+                parts <- 1
+            } else {
+                parts <- 0
+            }
+
+            if (parts > 1) {
+                write_parquet(all_vals, 
+                            file.path(outfolder_final,
+                                paste0(filename, "_year=", sel_year, "_month=", sel_month, "_part=", (parts + 1), ".parquet")))
+            } else {
+                if (parts > 0) {
+                    previous_ds <- read_parquet(file.path(outfolder_final, previous_file))
+                    class(previous_ds$flags) <- "list"
+                    previous_ds <- dplyr::bind_rows(previous_ds, all_vals)
+                }
+                write_parquet(previous_ds, 
+                            file.path(outfolder_final,
+                                paste0(filename, "_year=", sel_year, "_month=", sel_month, ".parquet")))
+            }
         }
 
         if (part == total_parts) {
