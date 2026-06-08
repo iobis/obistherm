@@ -168,6 +168,11 @@ for (yr in seq_along(range_year)) {
     obis_sel_month_total <- filter_data_month(obis_sel, sel_month)
     catn(nrow(obis_sel_month_total), "total points for this month.")
 
+    if (st$exists(st_cod) && !any(grepl("done", st$get(as.character(st_cod))))) {
+      message("Month started but not concluded. Running again.")
+      st$del(st_cod)
+    }
+
     if (nrow(obis_sel_month_total) > 0 && !st$exists(st_cod)) {
 
       if (nrow(obis_sel_month_total) > safe_limit) {
@@ -378,6 +383,7 @@ for (yr in seq_along(range_year)) {
 
           if (part == 1) {
             catn("Downloading OSTIA")
+            fs::file_delete(list.files("temp/", pattern = "OSTIA", full.names = T))
             df_ostia <- try(
                 cm$get(
                   dataset_id = ostia_id,
@@ -394,15 +400,27 @@ for (yr in seq_along(range_year)) {
                                            target = c(ifelse(sel_month == 2, 28, 30), 31)),
                               silent = TRUE)
               if (!inherits(df_ostia, "try-error")) {
-                df_ds <- xr$open_mfdataset(unlist(lapply(df_ostia, as.character), recursive = T))
-                df_ds <- df_ds$analysed_sst
-                df_ds <- df_ds$mean(dim = "time", skipna = T)
-                df_ds <- df_ds$to_dataset()
-                df_ds <- df_ds$expand_dims(
-                  time = pd$to_datetime(paste0(sel_year, "-", sprintf("%02d", sel_month), "-01"))
-                )
-                df_ds$to_netcdf(ostia_ds)
-                fs::file_delete(unlist(lapply(df_ostia, as.character), recursive = T))
+                if (file.exists(ostia_ds)) fs::file_delete(ostia_ds)
+                ds_raw <- try(xr$open_mfdataset(unlist(lapply(df_ostia, as.character), recursive = T)))
+                if (!inherits(ds_raw, "try-error")) {
+                  xarray_result <- try({
+                    df_ds <- ds_raw$analysed_sst$mean(dim = "time", skipna = T)$to_dataset()
+                    df_ds <- df_ds$expand_dims(
+                      time = pd$to_datetime(paste0(sel_year, "-", sprintf("%02d", sel_month), "-01"))
+                    )
+                    # synchronous scheduler due to HDF5 problems
+                    df_ds <- df_ds$compute(scheduler = "synchronous")
+                    df_ds$to_netcdf(ostia_ds)
+                  })
+                  try(ds_raw$close(), silent = TRUE)
+                  if (!inherits(xarray_result, "try-error")) {
+                    fs::file_delete(unlist(lapply(df_ostia, as.character), recursive = T))
+                  } else {
+                    df_ostia <- xarray_result
+                  }
+                } else {
+                  df_ostia <- ds_raw
+                }
               }
             }
           }
