@@ -6,9 +6,9 @@
 [![IOC](https://raw.githubusercontent.com/iobis/badges/refs/heads/main/badges/ioc-hlo3_resilience_to_climate_change.svg)](https://www.ioc.unesco.org/en/mission-and-objectives)
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/iobis/obistherm)
 
-`obistherm` is a dataset that links marine species occurrence records from OBIS with sea surface temperature (SST) data from four satellite products: GLORYS, CoralTemp, MUR, and OSTIA. Each occurrence record is matched to the temperature value at its location and date (at monthly resolution), at the recorded depth or across multiple depths. See how to download it [here](https://github.com/iobis/obis-therm#accessing-the-dataset) and how to use it [here](https://github.com/iobis/obis-therm#using-the-data). You can also explore some examples on the [product page](https://iobis.github.io/obistherm/). Instructions on how to cite this dataset are available [here](https://github.com/iobis/obis-therm#data-license-and-citation).
+`obistherm` is a dataset that links marine species occurrence records from OBIS with sea surface temperature (SST) data from four satellite products: GLORYS, CoralTemp, MUR, and OSTIA. Each occurrence record is matched to the corresponding temperature value at its location and date (at monthly resolution), across multiple depth layers and, where available, at the recorded depth. See how to download the dataset [here](https://github.com/iobis/obistherm#accessing-the-dataset) and how to use it [here](https://github.com/iobis/obistherm#using-the-data). You can also explore examples on the [product page](https://iobis.github.io/obistherm/). Instructions on how to cite the dataset are available [here](https://github.com/iobis/obistherm#data-license-and-citation).
 
-You can understand the dataset structure [on this document](https://github.com/iobis/obis-therm/blob/main/structure.md). The current version of **obistherm** is based on the [OBIS export](https://obis.org/data/access/) of 2025-11-20 and covers the period of 1982 to 2025.
+The dataset structure is described in [this document](https://github.com/iobis/obistherm/blob/main/structure.md). The current version of `obistherm` is based on the OBIS export from 2025-11-20 and covers the period from 1982 to 2025.
 
 ## Temperature sources
 
@@ -28,7 +28,7 @@ Ocean Biodiversity Information System (OBIS) (25 March 2025) OBIS Occurrence Dat
 
 ## Codes
 
-The production of this dataset is simple and depends on a single code: `get_temperatures.R` (and associated functions). An overview of the production steps is available [here](https://github.com/iobis/obis-therm/blob/main/pseudocode.md). Before starting, ensure that all requirements are met (run `setup.R`).
+The production of this dataset is simple and depends on a single code: `get_temperatures.R` (and associated functions). An overview of the production steps is available [here](https://github.com/iobis/obistherm/blob/main/pseudocode.md). Before starting, ensure that all requirements are met (run `setup.R`).
 
 Once the data is downloaded, the separate `parquet` files are aggregated, the H3 index is added, and the file is converted to GeoParquet. This is done through the `aggregate_files.R`
 
@@ -125,10 +125,10 @@ acanthuridae <- read_sf_dataset(acanthuridae)
 acanthuridae
 ```
 
-You can also use the function `retrieve_data` which is [provided in this repo.](https://github.com/iobis/obis-therm/blob/main/functions/retrieve_data.R) It will use DuckDB for fast querying.
+You can also use the function `retrieve_data` which is [provided in this repo.](https://github.com/iobis/obistherm/blob/main/functions/retrieve_data.R) It will use DuckDB for fast querying.
 
 ``` r
-source("https://raw.githubusercontent.com/iobis/obis-therm/refs/heads/main/functions/retrieve_data.R")
+source("https://raw.githubusercontent.com/iobis/obistherm/refs/heads/main/functions/retrieve_data.R")
 
 # If you don't pass any value to datasource, it will use the S3 access point
 lthay <- retrieve_data(scientificname = "Leptuca thayeri", year = 2020)
@@ -361,4 +361,4 @@ Map(point_layer)
 
 ## Notebooks
 
-Check out other examples of use in our [notebooks](https://github.com/iobis/obis-therm/tree/main/notebooks).
+Check out other examples of use in our [notebooks](https://github.com/iobis/obistherm/tree/main/notebooks).

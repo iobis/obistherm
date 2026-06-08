@@ -191,6 +191,8 @@ check_depth_diff <- function(depth_original, depth_new, limit = 5) {
 #' Start Dask connection
 #'
 #' @param browse if TRUE, open the browser for monitoring
+#' @param n_workers maximum number of workers. If NULL it uses number of cores - 2
+#' @param memory_limit Memory limit per worker. If NULL uses default. Should be written as "4GB"
 #'
 #' @return the Dask client
 #' @export
@@ -203,12 +205,35 @@ check_depth_diff <- function(depth_original, depth_new, limit = 5) {
 #' start_dask()
 #' }
 #'
-start_dask <- function(browse = TRUE) {
+start_dask <- function(browse = TRUE, n_workers = NULL, memory_limit = NULL) {
     da <- import("dask")
     dd <- import("dask.distributed")
     os <- import("os")
     os$environ["BOKEH_SESSION_TOKEN_EXPIRATION"] <- "86400"
-    client <- dd$Client()
+    if (is.null(n_workers)) {
+        n_workers <- max(1L, parallel::detectCores() - 2L)
+    }
+    on_mac <- Sys.info()[["sysname"]] == "Darwin"
+    if (on_mac) {
+        # On macOS, process-based workers communicate over TCP and are prone to
+        # "Connection reset by peer" (errno 54) crashes when the OS kills a worker
+        # under memory pressure. Thread-based workers share memory without TCP,
+        # eliminating these crashes. numpy/xarray release the GIL so parallelism
+        # is preserved.
+        cluster <- dd$LocalCluster(
+            n_workers = as.integer(n_workers),
+            threads_per_worker = 2L,
+            memory_limit = memory_limit,
+            processes = FALSE
+        )
+        client <- dd$Client(cluster)
+    } else {
+        client <- dd$Client(
+            n_workers = as.integer(n_workers),
+            threads_per_worker = 2L,
+            memory_limit = memory_limit
+        )
+    }
     if (browse) {
         browseURL("http://localhost:8787/status")
     } else {

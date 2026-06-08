@@ -16,6 +16,11 @@
 #' \dontrun{
 #' 
 #' }
+reticulate::source_python("functions/download_glorys_py.py")
+reticulate::source_python("functions/download_coraltemp_py.py")
+reticulate::source_python("functions/download_mur_py.py")
+reticulate::source_python("functions/download_ostia_py.py")
+
 download_temp <- function(temp_source,
                           dataset,
                           obis_dataset,
@@ -32,11 +37,6 @@ download_temp <- function(temp_source,
     .user <- rstudioapi::askForPassword("Enter your user")
     .pwd <- rstudioapi::askForPassword("Enter your password")
   }
-
-  reticulate::source_python("functions/download_glorys_py.py")
-  reticulate::source_python("functions/download_coraltemp_py.py")
-  reticulate::source_python("functions/download_mur_py.py")
-  reticulate::source_python("functions/download_ostia_py.py")
 
   if (inherits(dataset, "xarray.core.dataset.Dataset")) {
     ds <- dataset

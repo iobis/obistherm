@@ -90,7 +90,7 @@ get_depths <- function(dataset, target_data, sel_date, variable = "thetao", verb
             longitude = lons,
             latitude = lats,
             method = "nearest"
-        )
+        )$compute(scheduler = "synchronous")
 
         av_depths <- date_ds['depth']$values
 

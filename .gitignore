@@ -67,6 +67,9 @@ _columns.csv
 .vscode/
 
 *_stats.rds
+_void-ids.rds
+
+run.log
 
 .claude/
 web/.svelte-kit/

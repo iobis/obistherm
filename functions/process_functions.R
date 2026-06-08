@@ -82,6 +82,7 @@ process_glorys <- function(
         select(!starts_with("to_remove"))
 
     success <- try(download_temp("glorys", ds_temp_glorys, obis_dataset, sel_month, sel_year))
+    ds_temp_glorys$close()
 
     if (!inherits(success, "try-error")) {
         glorys_data <- success |>
@@ -94,24 +95,24 @@ process_glorys <- function(
             pivot_wider(names_from = depth_type, values_from = depth)
 
         glorys_data <- left_join(glorys_data, glorys_data_depths, by = "temp_ID")
-        glorys_data <- tibble::as_tibble(apply(glorys_data, 2, function(x) {
-            x[is.nan(x)] <- NA
-            x
-        }))
 
-        results_df$surfaceTemperature[results_df$temp_ID == glorys_data$temp_ID] <- glorys_data$depth_surface
-        results_df$midTemperature[results_df$temp_ID == glorys_data$temp_ID] <- glorys_data$depth_mid
-        results_df$deepTemperature[results_df$temp_ID == glorys_data$temp_ID] <- glorys_data$depth_deep
-        results_df$bottomTemperature[results_df$temp_ID == glorys_data$temp_ID] <- glorys_data$depth_bottom
+        glorys_data <- glorys_data |>
+            mutate(across(where(is.numeric), \(x) ifelse(is.nan(x), NA_real_, x)))
 
-        results_df$minimumDepthTemperature[results_df$temp_ID == glorys_data$temp_ID] <- glorys_data$depth_min
-        results_df$maximumDepthTemperature[results_df$temp_ID == glorys_data$temp_ID] <- glorys_data$depth_max
+        idx <- match(glorys_data$temp_ID, results_df$temp_ID)
+        results_df$surfaceTemperature[idx] <- glorys_data$depth_surface
+        results_df$midTemperature[idx] <- glorys_data$depth_mid
+        results_df$deepTemperature[idx] <- glorys_data$depth_deep
+        results_df$bottomTemperature[idx] <- glorys_data$depth_bottom
 
-        results_df$midDepth[results_df$temp_ID == glorys_data$temp_ID] <- glorys_data$depth_mid_depth
-        results_df$deepDepth[results_df$temp_ID == glorys_data$temp_ID] <- glorys_data$depth_deep_depth
+        results_df$minimumDepthTemperature[idx] <- glorys_data$depth_min
+        results_df$maximumDepthTemperature[idx] <- glorys_data$depth_max
 
-        results_df$minimumDepthClosestDepth[results_df$temp_ID == glorys_data$temp_ID] <- glorys_data$depth_min_depth
-        results_df$maximumDepthClosestDepth[results_df$temp_ID == glorys_data$temp_ID] <- glorys_data$depth_max_depth
+        results_df$midDepth[idx] <- glorys_data$depth_mid_depth
+        results_df$deepDepth[idx] <- glorys_data$depth_deep_depth
+
+        results_df$minimumDepthClosestDepth[idx] <- glorys_data$depth_min_depth
+        results_df$maximumDepthClosestDepth[idx] <- glorys_data$depth_max_depth
 
         results_df$minimumDepthTemperature[to_remove$to_remove_dmin] <- NA
         results_df$minimumDepthClosestDepth[to_remove$to_remove_dmin] <- NA
@@ -315,6 +316,7 @@ process_ostia <- function(
 
     ostia_ds_open <- xr$open_dataset(ostia_ds)
     success <- try(download_temp("ostia", ostia_ds_open, obis_dataset, sel_month, sel_year))
+    ostia_ds_open$close()
 
     if (!inherits(success, "try-error")) {
         cat("Processing OSTIA\n")

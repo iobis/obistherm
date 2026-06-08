@@ -67,4 +67,7 @@ def download_glorys_py(dataset, target_data, sel_date, verbose = True):
 
     result_df = pd.concat(results, ignore_index=True)
 
+    for col in result_df.select_dtypes(include='string').columns:
+        result_df[col] = result_df[col].astype(object)
+
     return result_df
