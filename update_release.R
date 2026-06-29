@@ -85,6 +85,7 @@ for (i in 2:ncol(stats$products)) stats$products[,i] <- format(stats$products[,i
 
 colnames(stats$per_group) <- c("Records", "Phylum")
 stats$per_group <- stats$per_group[,c(2,1)]
+stats$per_group <- stats$per_group[order(stats$per_group$Records, decreasing = TRUE),]
 stats$per_group[,2] <- format(stats$per_group[,2], big.mark = ",", scientific = FALSE)
 
 release <- c(
@@ -100,7 +101,7 @@ release <- c(
         ),
         "\n### Presence records per phylum",
         paste(
-            knitr::kable(stats$per_group[sort(stats$per_group$Records, decreasing = TRUE),]),
+            knitr::kable(stats$per_group),
             collapse = "\n"
         ),
         sep = "\n", collapse = "\n"
