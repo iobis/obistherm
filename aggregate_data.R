@@ -74,66 +74,79 @@ aggregate_data <- function(input_folder, output_folder,
   tf <- list.files(output_folder, recursive = T, full.names = T)
 
   pb <- progress::progress_bar$new(total = length(tf))
+  
+  con <- DBI::dbConnect(duckdb::duckdb())
+  DBI::dbSendQuery(con, "install h3 from community; load h3;")
+  duckdb::duckdb_register(con, "species_attrs_db", species_attrs)
 
   for (id in seq_along(tf)) {
     pb$tick()
 
-    tf_content <- read_parquet(tf[id])
+    file_path <- tf[id]
+    h3_cols <- paste(
+      sprintf("h3_latlng_to_cell_string(decimalLatitude, decimalLongitude, %d) AS h3_%d",
+              h3_resolutions, h3_resolutions),
+      collapse = ",\n        "
+    )
 
-    depth_flag <- "Difference between minimumDepthInMeters and maximumDepthInMeters is higher than 100m"
-    no_depth_flag <- "No depth information available for the record"
-
-    tf_content <- tf_content |>
-      mutate(obistherm_flags = decode_flag(obistherm_flags)) |>
-      left_join(species_attrs, by = "AphiaID") |>
-      mutate(obistherm_flags = ifelse(
-        is.na(fg_flag),
-        obistherm_flags,
-        ifelse(
-          is.na(obistherm_flags),
-          fg_flag,
-          paste(obistherm_flags, fg_flag, sep = "; ")
+    de <- DBI::dbExecute(con, glue::glue("
+      COPY (
+        WITH decoded AS (
+          SELECT
+            * EXCLUDE (obistherm_flags),
+            CASE
+              WHEN obistherm_flags IS NULL THEN NULL
+              ELSE nullif(array_to_string(list_filter([
+                CASE WHEN (obistherm_flags::INTEGER &  1) > 0 THEN 'Date is range' END,
+                CASE WHEN (obistherm_flags::INTEGER &  2) > 0 THEN 'GLORYS coordinate is approximated' END,
+                CASE WHEN (obistherm_flags::INTEGER &  4) > 0 THEN 'Minimum depth differs >5m from true value' END,
+                CASE WHEN (obistherm_flags::INTEGER &  8) > 0 THEN 'Maximum depth differs >5m from true value' END,
+                CASE WHEN (obistherm_flags::INTEGER & 16) > 0 THEN 'CoralTempSST coordinate is approximated' END,
+                CASE WHEN (obistherm_flags::INTEGER & 32) > 0 THEN 'MUR SST coordinate is approximated' END,
+                CASE WHEN (obistherm_flags::INTEGER & 64) > 0 THEN 'OSTIA SST coordinate is approximated' END
+              ], x -> x IS NOT NULL), '; '), '')
+            END AS obistherm_flags
+          FROM read_parquet('{file_path}')
+        ),
+        joined AS (
+          SELECT d.*, sa.adultFunctionalGroup, sa.fg_flag
+          FROM decoded d
+          LEFT JOIN species_attrs_db sa ON d.AphiaID::INTEGER = sa.AphiaID::INTEGER
+        ),
+        merged_flags AS (
+          SELECT
+            * EXCLUDE (obistherm_flags, fg_flag),
+            CASE
+              WHEN fg_flag IS NULL THEN obistherm_flags
+              WHEN obistherm_flags IS NULL THEN fg_flag
+              ELSE obistherm_flags || '; ' || fg_flag
+            END AS obistherm_flags
+          FROM joined
         )
-      )) |>
-      select(-fg_flag) |>
-      mutate(
-        depth_case = case_when(
-          is.na(minimumDepthInMeters) & is.na(maximumDepthInMeters) ~ "all_na_case",
-          is.na(minimumDepthInMeters) | is.na(maximumDepthInMeters) ~ "na_case",
-          abs(maximumDepthInMeters - minimumDepthInMeters) > 100 ~ "higher_case",
-          TRUE ~ "normal_case"
-        )
-      ) |>
-      mutate(
-        obistherm_flags = case_when(
-          is.na(obistherm_flags) ~ NA,
-          depth_case == "na_case" ~ obistherm_flags,
-          depth_case == "higher_case" ~ paste(obistherm_flags, depth_flag, sep = "; "),
-          depth_case == "all_na_case" ~ paste(obistherm_flags, no_depth_flag, sep = "; "),
-          TRUE ~ obistherm_flags
-        )
-      ) |>
-      select(-depth_case) |>
-      mutate(AphiaID = as.integer(AphiaID))
-    
-    for (hr in h3_resolutions) {
-      batches <- split(seq_len(nrow(tf_content)), ceiling(seq_len(nrow(tf_content)) / 10000))
-
-      cell_values <- lapply(batches, function(bt) {
-        suppressMessages(h3jsr::point_to_cell(tf_content[bt, c("decimalLongitude", "decimalLatitude")], res = hr))
-      })
-      cell_values <- unlist(cell_values, use.names = F)
-
-      tf_content[[paste0("h3_", hr)]] <- cell_values
-    }
-
-    tf_content |> write_parquet(tf[id])
-    rm(tf_content, batches)
+        SELECT
+          * EXCLUDE (obistherm_flags, AphiaID),
+          CASE
+            WHEN obistherm_flags IS NULL THEN NULL
+            WHEN minimumDepthInMeters IS NULL AND maximumDepthInMeters IS NULL
+              THEN obistherm_flags || '; ' || 'No depth information available for the record'
+            WHEN minimumDepthInMeters IS NULL OR maximumDepthInMeters IS NULL
+              THEN obistherm_flags
+            WHEN abs(maximumDepthInMeters - minimumDepthInMeters) > 100
+              THEN obistherm_flags || '; ' || 'Difference between minimumDepthInMeters and maximumDepthInMeters is higher than 100m'
+            ELSE obistherm_flags
+          END AS obistherm_flags,
+          AphiaID::INTEGER AS AphiaID,
+          {h3_cols}
+        FROM merged_flags
+      ) TO '{file_path}' (FORMAT PARQUET)
+    "))
 
     proc_res <- process_file(tf[id])
 
     if (!proc_res) stop("Failed processing file ", paste0("\033[47m", tf[id], "\033[49m"))
   }
+
+  DBI::dbDisconnect(con)
   
   cat("Aggregation concluded \n")
     

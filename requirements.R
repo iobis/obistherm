@@ -19,7 +19,8 @@ req_packages <- c(
   "fs",
   "httr",
   "storr",
-  "progress"
+  "progress",
+  "duckdb"
 )
 
 # Create a function to check if is installed
@@ -45,3 +46,7 @@ reticulate::py_install(envname = "./.venv", c(
   "h5py",
   "netCDF4"
 ), pip = TRUE)
+
+# Optional: install obistools for the function get_stats.R
+# set to TRUE to install
+if (FALSE) pak::pkg_install("iobis/obistools")

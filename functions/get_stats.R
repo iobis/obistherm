@@ -2,6 +2,7 @@
 #'
 #' @param final_folder path to final dataset
 #' @param save_rds if `TRUE`, save an RDS containing results
+#' @param rds_name name to the RDS file. The date will be appended to the start.
 #'
 #' @return list with stats and optionally saved RDS
 #' @export
@@ -14,7 +15,7 @@
 #' get_ds_stats("results")
 #' }
 #'
-get_ds_stats <- function(final_folder, save_rds = TRUE) {
+get_ds_stats <- function(final_folder, save_rds = TRUE, rds_name = "_stats.rds") {
     require(duckdb)
     require(dplyr)
     set.seed(2026)
@@ -140,7 +141,7 @@ get_ds_stats <- function(final_folder, save_rds = TRUE) {
         )
     )
 
-    if (save_rds) saveRDS(ret_obj, paste0(format(Sys.Date(), "%Y%m%d"), "_stats.rds"))
+    if (save_rds) saveRDS(ret_obj, paste0(format(Sys.Date(), "%Y%m%d"), rds_name))
 
     dbDisconnect(con)
 
