@@ -83,7 +83,7 @@ aggregate_data <- function(input_folder, output_folder,
     depth_flag <- "Difference between minimumDepthInMeters and maximumDepthInMeters is higher than 100m"
     no_depth_flag <- "No depth information available for the record"
 
-    tf_content2 <- tf_content |>
+    tf_content <- tf_content |>
       mutate(obistherm_flags = decode_flag(obistherm_flags)) |>
       left_join(species_attrs, by = "AphiaID") |>
       mutate(obistherm_flags = ifelse(
