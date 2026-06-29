@@ -11,12 +11,16 @@ library(reticulate)
 source("functions/utils.R")
 reticulate::source_python("functions/convert_geoarrow.py")
 settings <- yaml::read_yaml("settings.yml", readLines.warn = FALSE)
-input_folder <- settings$outfolder
-output_folder <- settings$outfolder_final
+input_folder <- settings$outfolder_final
+output_folder <- settings$outfolder_aggregated
 fs::dir_create(output_folder)
 
+species_info <- build_species_info(input_folder) |>
+  arrow::read_parquet()
+
 aggregate_data <- function(input_folder, output_folder,
-                           h3_resolutions = c(7)) {
+                           h3_resolutions = c(7L),
+                           species_attrs) {
   
   cat("Aggregating as Parquet dataset (hive format)\n")
 
@@ -62,6 +66,11 @@ aggregate_data <- function(input_folder, output_folder,
   
   cat("Converting to GeoArrow and adding H3\n")
 
+  species_attrs <- species_attrs |>
+    select(AphiaID, adultFunctionalGroup = functional_group, fg_flag = flag) |>
+    filter(grepl("FG life stage: adult", fg_flag)) |>
+    mutate(fg_flag = gsub("; FG life stage: adult|FG life stage: adult", "", fg_flag))
+
   tf <- list.files(output_folder, recursive = T, full.names = T)
 
   pb <- progress::progress_bar$new(total = length(tf))
@@ -71,8 +80,41 @@ aggregate_data <- function(input_folder, output_folder,
 
     tf_content <- read_parquet(tf[id])
 
-    tf_content <- tf_content |>
-      mutate(obistherm_flags = decode_flag(obistherm_flags))
+    depth_flag <- "Difference between minimumDepthInMeters and maximumDepthInMeters is higher than 100m"
+    no_depth_flag <- "No depth information available for the record"
+
+    tf_content2 <- tf_content |>
+      mutate(obistherm_flags = decode_flag(obistherm_flags)) |>
+      left_join(species_attrs, by = "AphiaID") |>
+      mutate(obistherm_flags = ifelse(
+        is.na(fg_flag),
+        obistherm_flags,
+        ifelse(
+          is.na(obistherm_flags),
+          fg_flag,
+          paste(obistherm_flags, fg_flag, sep = "; ")
+        )
+      )) |>
+      select(-fg_flag) |>
+      mutate(
+        depth_case = case_when(
+          is.na(minimumDepthInMeters) & is.na(maximumDepthInMeters) ~ "all_na_case",
+          is.na(minimumDepthInMeters) | is.na(maximumDepthInMeters) ~ "na_case",
+          abs(maximumDepthInMeters - minimumDepthInMeters) > 100 ~ "higher_case",
+          TRUE ~ "normal_case"
+        )
+      ) |>
+      mutate(
+        obistherm_flags = case_when(
+          is.na(obistherm_flags) ~ NA,
+          depth_case == "na_case" ~ obistherm_flags,
+          depth_case == "higher_case" ~ paste(obistherm_flags, depth_flag, sep = "; "),
+          depth_case == "all_na_case" ~ paste(obistherm_flags, no_depth_flag, sep = "; "),
+          TRUE ~ obistherm_flags
+        )
+      ) |>
+      select(-depth_case) |>
+      mutate(AphiaID = as.integer(AphiaID))
     
     for (hr in h3_resolutions) {
       batches <- split(seq_len(nrow(tf_content)), ceiling(seq_len(nrow(tf_content)) / 10000))
@@ -100,6 +142,6 @@ aggregate_data <- function(input_folder, output_folder,
 }
 
 # Aggregate
-aggregate_data(input_folder, output_folder)
+aggregate_data(input_folder, output_folder, species_attrs = species_info)
 
 ### END

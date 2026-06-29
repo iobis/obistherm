@@ -32,6 +32,7 @@ for (k in which_failed) {
     } else {
         if (which_failed_l == "status_mur") {
             if (sel_log$year == 2002 & sel_log$month < 6) {
+                log_df[k, "status_mur"] <- "unavailable"
                 next
             } else {
                 log_df[k, 3:7] <- NA

@@ -8,7 +8,7 @@
 
 `obistherm` is a dataset that links marine species occurrence records from OBIS with sea surface temperature (SST) data from four satellite products: GLORYS, CoralTemp, MUR, and OSTIA. Each occurrence record is matched to the corresponding temperature value at its location and date (at monthly resolution), across multiple depth layers and, where available, at the recorded depth. See how to download the dataset [here](https://github.com/iobis/obistherm#accessing-the-dataset) and how to use it [here](https://github.com/iobis/obistherm#using-the-data). You can also explore examples on the [product page](https://iobis.github.io/obistherm/). Instructions on how to cite the dataset are available [here](https://github.com/iobis/obistherm#data-license-and-citation).
 
-The dataset structure is described in [this document](https://github.com/iobis/obistherm/blob/main/structure.md). The current version of `obistherm` is based on the OBIS export from 2025-11-20 and covers the period from 1982 to 2025.
+The dataset structure is described in [this document](https://github.com/iobis/obistherm/blob/main/structure.md). Check the [release notes](https://github.com/iobis/obistherm/blob/main/RELEASE.md) for more information about the current version.
 
 ## Temperature sources
 

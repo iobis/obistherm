@@ -681,3 +681,387 @@ add_invalid_ids <- function(invalid_ids, sel_year, sel_month, rds_path = "_void-
 
     return(invisible(NULL))
 }
+
+#' Fetch AphiaIDs from WoRMS by attribute key ID
+#'
+#' @param attribute_ids integer vector of WoRMS attribute key IDs to query.
+#'   Default is c(4L, 70L) for Functional Group and Zonation respectively.
+#' @param sleep seconds to wait between requests
+#' @param output_dir directory to save the final CSV
+#' @param storr_path path for the storr cache directory used to checkpoint progress
+#'
+#' @return path to the saved CSV file
+#' @export
+#'
+#' @details
+#' Each page is written to a storr cache as it is fetched. If the function is
+#' interrupted, re-running it resumes from the last completed page. On successful
+#' completion the storr is destroyed and results are saved to a CSV in output_dir.
+#'
+#' @examples
+#' \dontrun{
+#' path <- get_worms_attributes_by_key()
+#' }
+#'
+get_worms_attributes_by_key <- function(
+  attribute_ids = c(4L, 70L),
+  sleep = 0.5,
+  output_dir = "data",
+  storr_path = "worms_attr_storr"
+) {
+    base_url <- "https://www.marinespecies.org/rest/AphiaIDsByAttributeKeyID"
+
+    st <- storr::storr_rds(storr_path)
+
+    null_chr <- function(x) if (is.null(x) || length(x) == 0) NA_character_ else as.character(x)
+
+    parse_page <- function(page, attr_id) {
+        rows <- list()
+        for (item in page) {
+            for (attr in item$Attributes) {
+                base_row <- data.frame(
+                    AphiaID           = as.integer(item$AphiaID),
+                    AphiaID_Inherited = suppressWarnings(as.integer(null_chr(attr$AphiaID_Inherited))),
+                    measurementTypeID = as.integer(null_chr(attr$measurementTypeID)),
+                    measurementType   = null_chr(attr$measurementType),
+                    measurementValue  = null_chr(attr$measurementValue),
+                    qualitystatus     = null_chr(attr$qualitystatus),
+                    stringsAsFactors  = FALSE
+                )
+                children <- attr$children
+                if (length(children) > 0) {
+                    for (child in children) {
+                        row <- base_row
+                        row$child_measurementTypeID <- as.integer(null_chr(child$measurementTypeID))
+                        row$child_measurementType   <- null_chr(child$measurementType)
+                        row$child_measurementValue  <- null_chr(child$measurementValue)
+                        rows[[length(rows) + 1L]] <- row
+                    }
+                } else {
+                    base_row$child_measurementTypeID <- NA_integer_
+                    base_row$child_measurementType   <- NA_character_
+                    base_row$child_measurementValue  <- NA_character_
+                    rows[[length(rows) + 1L]] <- base_row
+                }
+            }
+        }
+        if (length(rows) == 0) {
+            return(NULL)
+        }
+        dplyr::bind_rows(rows) |> dplyr::mutate(attributeKeyID = as.integer(attr_id))
+    }
+
+    collect_storr_pages <- function(attr_id) {
+        all_keys <- st$list()
+        page_keys <- all_keys[grepl(paste0("^page_", attr_id, "_"), all_keys)]
+        if (length(page_keys) == 0) {
+            return(NULL)
+        }
+        offsets <- as.integer(sub(paste0("^page_", attr_id, "_"), "", page_keys))
+        page_keys <- page_keys[order(offsets)]
+        dplyr::bind_rows(lapply(page_keys, function(k) st$get(k)))
+    }
+
+    fetch_attr <- function(attr_id) {
+        done_key     <- paste0("done_",     attr_id)
+        progress_key <- paste0("progress_", attr_id)
+
+        if (st$exists(done_key)) {
+            message("Attribute ID ", attr_id, " already complete, loading from storr...")
+            return(collect_storr_pages(attr_id))
+        }
+
+        offset <- if (st$exists(progress_key)) {
+            o <- st$get(progress_key)
+            message("Resuming attribute ID ", attr_id, " from offset ", o)
+            o
+        } else {
+            1L
+        }
+
+        repeat {
+            url <- paste0(base_url, "/", attr_id, "?offset=", offset)
+            message("Fetching attribute ID ", attr_id, ", offset ", offset)
+
+            resp <- tryCatch(
+                httr::GET(url, httr::timeout(60)),
+                error = function(e) {
+                    warning("Request failed (attr_id=", attr_id, ", offset=", offset, "): ", conditionMessage(e))
+                    NULL
+                }
+            )
+
+            if (is.null(resp)) break
+
+            sc <- httr::status_code(resp)
+
+            if (sc == 204L) {
+                st$set(done_key, TRUE)
+                break
+            }
+
+            if (httr::http_error(resp)) {
+                warning("Request failed (attr_id=", attr_id, ", offset=", offset, "): HTTP ", sc)
+                break
+            }
+
+            page <- tryCatch(
+                jsonlite::fromJSON(httr::content(resp, as = "text", encoding = "UTF-8"),
+                                   simplifyDataFrame = FALSE),
+                error = function(e) {
+                    warning("Parse failed (attr_id=", attr_id, ", offset=", offset, "): ", conditionMessage(e))
+                    NULL
+                }
+            )
+
+            if (is.null(page)) break
+
+            if (length(page) == 0) {
+                st$set(done_key, TRUE)
+                break
+            }
+
+            page_rows <- parse_page(page, attr_id)
+            if (!is.null(page_rows)) {
+                st$set(paste0("page_", attr_id, "_", offset), page_rows)
+            }
+
+            offset <- offset + length(page)
+            st$set(progress_key, offset)
+            Sys.sleep(sleep)
+        }
+
+        Sys.sleep(sleep) 
+        collect_storr_pages(attr_id)
+    }
+
+    results <- dplyr::bind_rows(lapply(attribute_ids, fetch_attr))
+
+    outfile <- file.path(output_dir, paste0("WoRMS_attributes_", Sys.Date(), ".parquet"))
+    arrow::write_parquet(results, outfile)
+    message("Saved WoRMS attributes to ", outfile)
+
+    all_done <- all(vapply(attribute_ids, function(id) st$exists(paste0("done_", id)), logical(1)))
+    if (all_done) {
+        st$destroy()
+        message("Storr cache cleared.")
+    } else {
+        incomplete <- attribute_ids[!vapply(attribute_ids, function(id) st$exists(paste0("done_", id)), logical(1))]
+        warning("Some attribute IDs did not complete successfully (", paste(incomplete, collapse = ", "),
+                "). Storr cache preserved at: ", storr_path)
+    }
+
+    outfile
+}
+
+#' Build species functional group attributes
+#'
+#' Assembles a table of functional group (benthos/pelagic) classifications for
+#' all species present in the final dataset, drawing from WoRMS attributes and,
+#' optionally, FishBase and SeaLifeBase for species not covered by WoRMS.
+#'
+#' @param final_dataset path to the Arrow/Parquet dataset produced by the
+#'   pipeline (must contain `AphiaID` and `species` columns).
+#' @param local_worms optional path to a `WoRMS_attributes_<date>.parquet` file.
+#'   If `NULL`, the function searches `output_dir` and picks the most recently
+#'   modified matching file.
+#' @param output_dir directory used both to search for the WoRMS file (when
+#'   `local_worms` is `NULL`) and to write the output parquet. Defaults to
+#'   `"data"`.
+#' @param get_fishbase logical; if `TRUE`, species without a WoRMS functional
+#'   group are looked up in FishBase via \pkg{rfishbase}. Defaults to `FALSE`.
+#' @param get_sealifebase logical; if `TRUE`, species without a WoRMS functional
+#'   group are looked up in SeaLifeBase via \pkg{rfishbase}. Defaults to
+#'   `FALSE`.
+#' @param force logical; if TRUE it will generate a new table even if one is
+#'  already available.
+#'
+#' @return `NULL` (invisibly). Writes
+#'   `species_functional_attr_<Sys.Date()>.parquet` to `output_dir` as a
+#'   side effect.  The file contains columns `AphiaID`, `functional_group`,
+#'   `functional_group_original`, `is_inherited`, `source`, and `flag`.
+#' @export
+#'
+#' @details
+#' Functional groups are resolved in priority order:
+#' \enumerate{
+#'   \item WoRMS trait data (measurement type 4, adult life stage preferred).
+#'   \item FishBase/SeaLifeBase `DemersPelag` field and ecology table (only for
+#'     species missing from WoRMS, and only when the respective `get_*`
+#'     argument is `TRUE`).
+#' }
+#' The `flag` column records the data source and, where applicable, whether the
+#' functional group was inherited from a higher taxonomic level.
+#'
+#' @examples
+#' \dontrun{
+#' build_species_info(
+#'     final_dataset = "data/obis_final",
+#'     get_fishbase   = TRUE,
+#'     get_sealifebase = TRUE
+#' )
+#' }
+#'
+build_species_info <- function(
+  final_dataset,
+  local_worms = NULL,
+  output_dir = "data",
+  get_fishbase = FALSE,
+  get_sealifebase = FALSE,
+  force = FALSE
+) {
+    find_latest <- function(dir, pattern = "WoRMS_attributes_\\d{4}-\\d{2}-\\d{2}\\.parquet$") {
+        files <- list.files(
+            dir,
+            pattern = pattern,
+            full.names = TRUE
+        )
+        if (length(files) == 0) {
+            return(NULL)
+        }
+        files[order(file.mtime(files), decreasing = TRUE)][1]
+    }
+
+    existing_data <- find_latest(output_dir, "species_functional_attr_\\d{4}-\\d{2}-\\d{2}\\.parquet$")
+
+    if (!is.null(existing_data) & !force) {
+        return(existing_data)
+    } else {
+        message("Non existent functional attributes table or `force = TRUE`. Generating new table.")
+    }
+
+    if (is.null(local_worms)) {
+        local_worms <- find_latest(output_dir)
+    }
+
+    if (is.null(local_worms) || !file.exists(local_worms)) {
+        stop("No WoRMS file found. Build it first with `get_worms_attributes_by_key()`")
+    }
+
+    local_worms <- arrow::read_parquet(local_worms)
+
+    ds <- arrow::open_dataset(final_dataset)
+
+    species_attr <- ds |>
+        dplyr::select(AphiaID, species) |>
+        dplyr::distinct() |>
+        dplyr::collect() |>
+        dplyr::filter(!is.na(AphiaID)) |>
+        dplyr::mutate(AphiaID = as.integer(AphiaID)) |>
+        dplyr::group_by(AphiaID) |>
+        dplyr::slice(1) |>
+        dplyr::ungroup()
+
+    rm(ds)
+
+    worms_filtered <- local_worms |>
+        mutate(is_inherited = ifelse(AphiaID != AphiaID_Inherited, TRUE, FALSE)) |>
+        mutate(source = "WoRMS") |>
+        filter(measurementTypeID == 4) |>
+        mutate(child_measurementValue = ifelse(
+            is.na(child_measurementValue), "not available", child_measurementValue
+        )) |>
+        filter(child_measurementValue %in% c("adult", "Adult", "not available")) |>
+        mutate(life_stage = tolower(child_measurementValue)) |>
+        mutate(functional_group = case_when(
+            grepl("bentho", tolower(measurementValue)) ~ "benthos",
+            grepl("pelagic", tolower(measurementValue)) ~ "pelagic",
+            grepl("plankton", tolower(measurementValue)) ~ "pelagic",
+            grepl("euston", tolower(measurementValue)) ~ "pelagic",
+            grepl("nekton", tolower(measurementValue)) ~ "pelagic",
+            .default = NA
+        )) |>
+        select(AphiaID, functional_group,
+            functional_group_original = measurementValue,
+            life_stage, is_inherited, source
+        ) |>
+        group_by(AphiaID) |>
+        arrange(life_stage == "not available", .by_group = TRUE) |>
+        slice(1)
+
+    covered <- worms_filtered |>
+        filter(AphiaID %in% species_attr$AphiaID)
+
+    non_covered <- species_attr |>
+        filter(!AphiaID %in% covered$AphiaID)
+
+    if (nrow(non_covered) > 0 && (get_fishbase || get_sealifebase)) {
+        to_lookup <- non_covered |> dplyr::filter(!is.na(species))
+        message("Looking up ", nrow(to_lookup), " species not found in WoRMS using FishBase/SeaLifeBase...")
+
+        pelagic_cols <- c("Epipelagic", "Mesopelagic", "Bathypelagic", "Abyssopelagic", "Hadopelagic", "Pelagic")
+        benthic_dp <- c("demersal", "bathydemersal", "reef-associated", "benthopelagic")
+        pelagic_dp <- c("pelagic", "pelagic-oceanic", "pelagic-neritic")
+
+        lookup_server <- function(spp, server, source_label) {
+            sp_df <- rfishbase::species(spp, server = server) |>
+                dplyr::select(SpecCode, Species, DemersPelag) |>
+                dplyr::distinct()
+
+            eco_df <- rfishbase::ecology(sp_df$Species, server = server)
+
+            if (!is.null(eco_df) && nrow(eco_df) > 0) {
+                eco_summary <- eco_df |>
+                    dplyr::select(SpecCode, dplyr::any_of(c("Benthic", pelagic_cols))) |>
+                    dplyr::group_by(SpecCode) |>
+                    dplyr::slice(1) |>
+                    dplyr::ungroup()
+                sp_df <- dplyr::left_join(sp_df, eco_summary, by = "SpecCode")
+            }
+
+            sp_df |>
+                dplyr::mutate(
+                    functional_group = dplyr::case_when(
+                        tolower(DemersPelag) %in% benthic_dp ~ "benthos",
+                        tolower(DemersPelag) %in% pelagic_dp ~ "pelagic",
+                        !is.na(Benthic) & Benthic == 1 ~ "benthos",
+                        dplyr::if_any(dplyr::any_of(pelagic_cols), ~ !is.na(.) & . == 1) ~ "pelagic",
+                        .default = NA
+                    ),
+                    functional_group_original = DemersPelag,
+                    is_inherited = FALSE,
+                    source = source_label,
+                    life_stage = "not available"
+                ) |>
+                dplyr::filter(!is.na(functional_group)) |>
+                dplyr::select(Species, functional_group, functional_group_original, is_inherited, source)
+        }
+
+        fb_result <- dplyr::bind_rows(
+            if (get_fishbase) lookup_server(to_lookup$species, "fishbase", "FishBase"),
+            if (get_sealifebase) lookup_server(to_lookup$species, "sealifebase", "SeaLifeBase")
+        ) |>
+            dplyr::distinct(Species, .keep_all = TRUE) |>
+            dplyr::inner_join(to_lookup, by = c("Species" = "species")) |>
+            dplyr::select(AphiaID, functional_group, functional_group_original, is_inherited, source)
+
+        covered <- dplyr::bind_rows(covered, fb_result)
+    }
+
+    final_list <- covered |>
+        mutate(flag = case_when(
+            source == "WoRMS" & is_inherited ~ "FG source: WoRMS; FG inherited from higher taxonomic level",
+            source == "WoRMS" & !is_inherited ~ "FG source: WoRMS",
+            source == "SeaLifeBase" ~ "FG source: SeaLifeBase",
+            source == "FishBase" ~ "FG source: FishBase"
+        )) |>
+        mutate(flag = ifelse(
+            is.na(flag), flag, ifelse(
+                source == "WoRMS" & life_stage == "adult",
+                paste(flag, "FG life stage: adult", sep = "; "),
+                paste(flag, "FG life stage: not available", sep = "; ")
+            )
+        )) |>
+        mutate(flag = ifelse(
+            is.na(flag), flag, ifelse(
+                functional_group != functional_group_original,
+                paste(paste0("FG original value: ", functional_group_original), flag, sep = "; "),
+                flag
+            )
+        ))
+
+    outf <- file.path(output_dir, paste0("species_functional_attr_", Sys.Date(), ".parquet"))
+    arrow::write_parquet(final_list, outf)
+
+    return(outf)
+}

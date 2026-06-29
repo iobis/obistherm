@@ -80,6 +80,12 @@ ostia_rep <- cm$open_dataset(
   password = .pwd
 )
 ostia_rep_range <- c(ostia_rep$time$min()$values, ostia_rep$time$max()$values)
+ostia_rep_end_date <- lubridate::as_date(ostia_rep_range[2])
+if (ostia_rep_end_date == lubridate::ceiling_date(ostia_rep_end_date, "month") - lubridate::days(1)) {
+  lubridate::floor_date(ostia_rep_end_date, "month")
+} else {
+  ostia_rep_max_month <- lubridate::month(lubridate::floor_date(ostia_rep_end_date, "month") - lubridate::days(1))
+}
 ostia_rep_range <- lubridate::year(ostia_rep_range[1]):lubridate::year(ostia_rep_range[2])
 ostia_nrt <- cm$open_dataset(
   dataset_id = "METOFFICE-GLO-SST-L4-NRT-OBS-SST-V2",
@@ -139,7 +145,15 @@ for (yr in seq_along(range_year)) {
   catg("Processing year", sel_year)
 
   # Check if any month of the year is pending
-  st_yr <- lapply(st$mget(paste0(sel_year, 1:12)), \(x) !is.null(x)) |> unlist()
+  st_yr <- lapply(st$mget(paste0(sel_year, 1:12)), \(x) {
+    if (is.null(x)) {
+      FALSE
+    } else if (any(grepl("done", x))) {
+      TRUE
+    } else {
+      FALSE
+    }
+  }) |> unlist()
   if (!all(st_yr)) {
     catn(sum(!st_yr), "months to be processed.")
   } else {
@@ -159,8 +173,10 @@ for (yr in seq_along(range_year)) {
     st_cod <- paste0(sel_year, sel_month)
     catn("Proccessing month", sel_month)
 
-    if (lubridate::year(Sys.Date()) == sel_year && lubridate::month(Sys.Date()) == sel_month) {
-      catn("Skipping current month")
+    if (lubridate::year(Sys.Date()) == sel_year && sel_month >= lubridate::month(Sys.Date())) {
+      catn("Skipping month")
+      log_df[log_df$year == sel_year & log_df$month == sel_month, "status_general"] <- "skipped"
+      st$set("log", log_df)
       next
     }
 
@@ -373,8 +389,13 @@ for (yr in seq_along(range_year)) {
         if (sel_year %in% ostia_range) {
 
           if (sel_year %in% ostia_rep_range) {
-            ostia_id <- "METOFFICE-GLO-SST-L4-REP-OBS-SST"
-            ostia_prod <- "REP"
+            if (sel_year == max(ostia_rep_range) && sel_month > ostia_rep_max_month) {
+              ostia_id <- "METOFFICE-GLO-SST-L4-NRT-OBS-SST-V2"
+              ostia_prod <- "NRT"
+            } else {
+              ostia_id <- "METOFFICE-GLO-SST-L4-REP-OBS-SST"
+              ostia_prod <- "REP"
+            }
           } else {
             ostia_id <- "METOFFICE-GLO-SST-L4-NRT-OBS-SST-V2"
             ostia_prod <- "NRT"

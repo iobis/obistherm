@@ -87,20 +87,72 @@ previous_done <- function(connection, sel_year, sel_month) {
 }
 
 
-invalid_ids <- function(dataset, rds_path = "_void-ids.rds") {
-    if (file.exists(rds_path)) {
-        message("Checking invalid _id's")
-        existent <- readRDS(rds_path)
-        existent$toremove <- 1
-        prev <- nrow(dataset)
-        dataset <- left_join(dataset, existent)
-        dataset <- dataset[is.na(dataset$toremove), -length(dataset)]
-        after <- nrow(dataset)
-        message(prev-after, " records removed.")
+cleanup_invalid_ids <- function(connection, rds_path = "_void-ids.rds") {
+    if (!file.exists(rds_path)) {
+        message("Invalid IDs RDS file does not exist. Ignoring.")
     } else {
-        message("RDS file not available, ignoring...")
+        existent <- readRDS(rds_path) |>
+                unlist(use.names = FALSE)
+
+        DBI::dbWriteTable(connection, "invalid_ids_check",
+                        data.frame(`_id` = existent, check.names = FALSE),
+                        overwrite = TRUE)
+
+        still_present <- DBI::dbGetQuery(connection, "
+            SELECT i._id
+            FROM invalid_ids_check i
+            INNER JOIN obis o ON i._id = o._id
+        ") |> unlist(use.names = FALSE)
+
+        n_removed <- length(existent) - length(still_present)
+        if (n_removed > 0) {
+            message(n_removed, " invalid IDs no longer in OBIS removed from RDS.")
+            if (length(still_present) > 0) {
+                saveRDS(data.frame(`_id` = still_present, check.names = FALSE), rds_path)
+            } else {
+                file.remove(rds_path)
+            }
+        }
+
+        DBI::dbRemoveTable(connection, "invalid_ids_check")
     }
-    return(dataset)
+
+    return(invisible(NULL))
+}
+
+
+invalid_ids <- function(connection, rds_path = "_void-ids.rds") {
+    if (!file.exists(rds_path)) {
+        message("RDS file not available, ignoring...")
+        return(invisible(connection))
+    }
+
+    existent <- readRDS(rds_path) |>
+        unlist(use.names = FALSE)
+
+    if (length(existent) == 0) {
+        message("No invalid IDs found, ignoring...")
+        return(invisible(connection))
+    }
+
+    message("Filtering ", length(existent), " invalid _id's from obis view.")
+
+    DBI::dbWriteTable(connection, "void_ids",
+                      data.frame(`_id` = existent, check.names = FALSE),
+                      overwrite = TRUE)
+
+    view_def <- DBI::dbGetQuery(connection,
+        "SELECT view_definition FROM duckdb_views() WHERE view_name = 'obis'"
+    )$view_definition
+
+    DBI::dbSendQuery(connection, "DROP VIEW obis")
+    DBI::dbSendQuery(connection, glue::glue(
+        "CREATE VIEW obis AS
+         SELECT * FROM ({view_def}) v
+         WHERE _id NOT IN (SELECT _id FROM void_ids)"
+    ))
+
+    return(invisible(connection))
 }
 
 # Ok
