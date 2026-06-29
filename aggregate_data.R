@@ -41,6 +41,9 @@ aggregate_data <- function(input_folder, output_folder,
   file_schema$coraltempSST <- double()
   file_schema$murSST <- double()
   file_schema$ostiaSST <- double()
+  file_schema$date_start <- arrow::int64()
+  file_schema$date_mid <- arrow::int64()
+  file_schema$date_end <- arrow::int64()
   
   ds <- open_dataset(input_folder,
                      schema = file_schema)
@@ -48,8 +51,8 @@ aggregate_data <- function(input_folder, output_folder,
   ds |>
     select(-extractedDateStart, -extractedDateMid, -extractedDateEnd, -date_year, -dropped) |>
     rename(year = extractedDateYear, month = extractedDateMonth) |>
-    mutate(year = as.integer(year), 
-           month = as.integer(month),
+    mutate(year = cast(year, arrow::int32()),
+           month = cast(month, arrow::int32()),
            surfaceTemperature = round(surfaceTemperature, 2),
            midTemperature = round(midTemperature, 2),
            deepTemperature = round(deepTemperature, 2),
@@ -124,7 +127,7 @@ aggregate_data <- function(input_folder, output_folder,
           FROM joined
         )
         SELECT
-          * EXCLUDE (obistherm_flags, AphiaID),
+          * EXCLUDE (obistherm_flags, AphiaID, year),
           CASE
             WHEN obistherm_flags IS NULL THEN NULL
             WHEN minimumDepthInMeters IS NULL AND maximumDepthInMeters IS NULL
@@ -136,6 +139,7 @@ aggregate_data <- function(input_folder, output_folder,
             ELSE obistherm_flags
           END AS obistherm_flags,
           AphiaID::INTEGER AS AphiaID,
+          year::INTEGER AS year,
           {h3_cols}
         FROM merged_flags
       ) TO '{file_path}' (FORMAT PARQUET)

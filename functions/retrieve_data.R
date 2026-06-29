@@ -10,6 +10,8 @@
 #' @param startdepth minimum depth
 #' @param enddepth maximum depth
 #' @param wkt geometry in well-known text format
+#' @param absences if `FALSE` (default), remove absences, if `TRUE` 
+#'  returns only absences, and if `NULL` returns both.
 #' @param h3 vector of H3 index cells to return
 #' @param columns which columns to return
 #' @param return_query logical, if TRUE print the DuckDB query call
@@ -27,7 +29,7 @@
 #' }
 #'
 retrieve_data <- function(datasource = NULL, scientificname = NULL, taxonid = NULL, family = NULL,
-    year = NULL, startyear = NULL, endyear = NULL, startdepth = NULL, enddepth = NULL,
+    year = NULL, startyear = NULL, endyear = NULL, startdepth = NULL, enddepth = NULL, absence = FALSE,
     wkt = NULL, h3 = NULL, columns = NULL, return_query = FALSE) {
 
     require(DBI)
@@ -132,11 +134,19 @@ retrieve_data <- function(datasource = NULL, scientificname = NULL, taxonid = NU
 
     final_dq <- paste(final_dq, collapse = " and ")
 
+    if (!is.null(absence)) {
+        if (absence) {
+            final_dq <- paste0(final_dq, " and absence is true")
+        } else {
+            final_dq <- paste0(final_dq, " and absence is not true")
+        }
+    }
+
     query <- glue::glue(
         "
 select {columns}
   from read_parquet('{datasource}/*/*')
-  where {final_dq}
+  where {final_dq};
         "
     )
 

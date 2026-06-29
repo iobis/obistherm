@@ -101,12 +101,16 @@ library(dplyr)
 
 ds <- open_dataset("obistherm") # path to the dataset
 
-acanthuridae <- ds %>%
-    filter(family == "Acanthuridae") %>%
+acanthuridae <- ds |>
+    filter(family == "Acanthuridae") |>
+    filter(!absence) |>
     collect()
 
 head(acanthuridae)
 ```
+
+> [!TIP]
+> As you noticed, we added `filter(!absence)` to our `dplyr` query. This is because `obistherm` **includes absences**. The absence flag is a boolean (`TRUE` if type absence) in the field `absence`. If you are interested in keeping the absences just remove this filter, or if you need only the absences remove the `!` symbol.
 
 With `sfarrow` (spatial, returns an `sf` object):
 
@@ -117,8 +121,9 @@ library(sfarrow)
 
 ds <- open_dataset("obistherm") # path to the dataset
 
-acanthuridae <- ds %>%
-    filter(family == "Acanthuridae")
+acanthuridae <- ds |>
+    filter(family == "Acanthuridae") |>
+    filter(!absence)
 
 acanthuridae <- read_sf_dataset(acanthuridae)
 
@@ -131,6 +136,7 @@ You can also use the function `retrieve_data` which is [provided in this repo.](
 source("https://raw.githubusercontent.com/iobis/obistherm/refs/heads/main/functions/retrieve_data.R")
 
 # If you don't pass any value to datasource, it will use the S3 access point
+# By default it returns only presences (not absences)
 lthay <- retrieve_data(scientificname = "Leptuca thayeri", year = 2020)
 
 # With a local source
@@ -149,7 +155,7 @@ Or directly through DuckDB:
 query <- "
 select *
   from read_parquet('s3://obis-products/obistherm/*/*')
-  where year = 2020 and species = 'Leptuca thayeri'
+  where year = 2020 and species = 'Leptuca thayeri' and absence is not true;
 "
 
 con <- dbConnect(duckdb())
@@ -164,11 +170,17 @@ On Python, you can use GeoPandas:
 
 ``` python
 import geopandas as gpd
+import pyarrow.dataset as ds
 
-species_filter = [("species", "==", "Acanthurus chirurgus")]
-year_filter = [("year", "==", 2000)]
-
-gdf = gpd.read_parquet("obistherm/", filters=species_filter + year_filter)[["geometry", "species", "coraltempSST", "year"]]
+dataset = ds.dataset("/Volumes/OBIS2/results_final/", format="parquet", partitioning="hive")
+cols = ["geometry", "species", "coraltempSST", "year"]
+table = dataset.to_table(
+    filter=(ds.field("species") == "Acanthurus chirurgus") &
+           (ds.field("year") == 2000) &
+           ~ds.field("absence"),
+    columns=cols
+)
+gdf = gpd.GeoDataFrame.from_arrow(table)
 
 gdf
 ```
@@ -177,23 +189,25 @@ gdf
 ## Examples
 
 > [!NOTE]
-> On all examples, we use a local copy stored in a folder called "aggregated". Change it to your local folder or access through the S3 access point.
+> On all examples, we use a local copy stored in a folder called "obistherm". Change it to your local folder or access through the S3 access point.
 
 ### R
 
 Temperature data for two fiddler crab species (family Ocypodidae):
 
 ``` r
+source("https://raw.githubusercontent.com/iobis/obistherm/refs/heads/main/functions/retrieve_data.R")
 library(ggplot2)
 
+# Retrieves only presences:
 ocy <- retrieve_data(scientificname = c(
     "Leptuca thayeri", "Minuca rapax"
-), datasource = "aggregated/") # Change here with your data source or NULL
+), datasource = "obistherm/") # Change here with your data source or NULL
 # to use the S3 access point
 
-ocy_proc <- ocy %>%
-    mutate(date = as.Date(paste(year, month, "01", sep = "-"))) %>%
-    rename(glorysSST = surfaceTemperature) %>%
+ocy_proc <- ocy |>
+    mutate(date = as.Date(paste(year, month, "01", sep = "-"))) |>
+    rename(glorysSST = surfaceTemperature) |>
     tidyr::pivot_longer(cols = ends_with("SST"),
                         names_to = "SSTsource", values_to = "sst")
 
@@ -226,13 +240,15 @@ library(sf)
 
 ds <- open_dataset("aggregated")
 
-acanthurus <- ds %>%
-    select(species, coraltempSST, geometry, h3_7, year, month) %>%
-    filter(species == "Acanthurus coeruleus") %>%
-    filter(!is.na(coraltempSST)) %>%
+acanthurus <- ds |>
+    filter(!absence) |>
+    select(species, coraltempSST, geometry, h3_7, year, month) |>
+    filter(species == "Acanthurus coeruleus") |>
+    filter(!is.na(coraltempSST)) |>
     filter(year == 2014)
 
 acanthurus <- sfarrow::read_sf_dataset(acanthurus)
+st_crs(acanthurus) <- 4326
 
 period <- data.frame(
     period = rep(c("T1", "T2", "T3", "T4"), each = 3),
@@ -256,10 +272,10 @@ ggplot() +
 You can also take advantage of the H3 system to aggregate information in cells.
 
 ```r
-acanthurus_agg <- acanthurus %>%
-    sf::st_drop_geometry() %>%
-    mutate(h3_4 = h3jsr::get_parent(h3_7, res = 4)) %>%
-    group_by(h3_4) %>%
+acanthurus_agg <- acanthurus |>
+    sf::st_drop_geometry() |>
+    mutate(h3_4 = h3jsr::get_parent(h3_7, res = 4)) |>
+    group_by(h3_4) |>
     summarise(mean_sst = mean(coraltempSST))
 
 acanthurus_agg_pol <- h3jsr::cell_to_polygon(acanthurus_agg$h3_4)
@@ -284,17 +300,23 @@ Static map plot:
 
 ``` python
 import geopandas as gpd
+import pyarrow.dataset as ds
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import contextily as ctx
 from palettable.matplotlib import Viridis_10
 
-species_filter = [("species", "==", "Acanthurus chirurgus")]
-year_filter = [("year", "==", 2000)]
+dataset = ds.dataset('{out_f}', format='parquet', partitioning='hive')
+cols = ['geometry', 'species', 'coraltempSST', 'year']
+table = dataset.to_table(
+    filter=(ds.field('species') == 'Acanthurus chirurgus') &
+           (ds.field('year') == 2000) &
+           ~ds.field('absence'),
+    columns=cols
+)
+gdf = gpd.GeoDataFrame.from_arrow(table)
 
-gdf = gpd.read_parquet("aggregated/", filters=species_filter + year_filter)[["geometry", "species", "coraltempSST", "year"]]
-
-values = gdf["coraltempSST"]
+values = gdf['coraltempSST']
 norm = (values - values.min()) / (values.max() - values.min())
 
 cmap = Viridis_10.mpl_colormap  # Sequential colormap
@@ -303,7 +325,7 @@ norm = mcolors.Normalize(vmin=values.min(), vmax=values.max())
 gdf = gdf.to_crs(epsg=3857)
 
 fig, ax = plt.subplots(figsize=(10, 8))
-sc = gdf.plot(column="coraltempSST", 
+sc = gdf.plot(column='coraltempSST', 
               cmap=cmap, 
               norm=norm, 
               markersize=5, 
@@ -315,8 +337,8 @@ ctx.add_basemap(ax, source=ctx.providers.CartoDB.Positron, zoom=5)
 
 sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
 sm.set_array([]) 
-cbar = fig.colorbar(sm, ax=ax, orientation="vertical")
-cbar.set_label("Coral Temperature SST (°C)")
+cbar = fig.colorbar(sm, ax=ax, orientation='vertical')
+cbar.set_label('Coral Temperature SST (°C)')
 
 ax.set_xticks([])
 ax.set_yticks([])
@@ -324,9 +346,10 @@ ax.spines['top'].set_visible(False)
 ax.spines['right'].set_visible(False)
 ax.spines['left'].set_visible(False)
 ax.spines['bottom'].set_visible(False)
-ax.set_title("Species: Acanthurus chirurgus - Coral Temperature SST")
+ax.set_title('Species: Acanthurus chirurgus - Coral Temperature SST')
 
-plt.show()
+plt.savefig('images/species_py.png', dpi=150, bbox_inches='tight')
+plt.close()
 ```
 ![](images/species_py.png)
 
@@ -334,27 +357,30 @@ Dynamic map with Lonboard:
 
 ``` python
 import geopandas as gpd
+import pyarrow.dataset as ds
 import lonboard
 from lonboard.colormap import apply_continuous_cmap
-import seaborn as sns
-import pandas as pd
 from palettable.colorbrewer.diverging import BrBG_10
 
-species_filter = [("species", "==", "Acanthurus chirurgus")]
-year_filter = [("year", "==", 2000)]
-
-gdf = gpd.read_parquet("aggregated/", filters=species_filter + year_filter)[["geometry", "species", "coraltempSST", "year"]]
-
-point_layer = lonboard.ScatterplotLayer.from_geopandas(gdf)
+dataset = ds.dataset("{out_f}", format="parquet", partitioning="hive")
+cols = ["geometry", "species", "coraltempSST", "year"]
+table = dataset.to_table(
+    filter=(ds.field("species") == "Acanthurus chirurgus") &
+           (ds.field("year") == 2000) &
+           ~ds.field("absence"),
+    columns=cols
+)
+gdf = gpd.GeoDataFrame.from_arrow(table)
 
 values = gdf["coraltempSST"]
 normalized_values = (values - values.min()) / (values.max() - values.min())
 
+point_layer = lonboard.ScatterplotLayer.from_geopandas(gdf)
 point_layer.get_radius = 10000
 point_layer.radius_max_pixels = 2
 point_layer.get_fill_color = apply_continuous_cmap(normalized_values, BrBG_10, alpha=0.7)
 
-Map(point_layer)
+lonboard.Map(point_layer, view_state={"longitude": -75, "latitude": 15, "zoom": 4})
 ```
 
 ![](images/lonboard_py.png)
